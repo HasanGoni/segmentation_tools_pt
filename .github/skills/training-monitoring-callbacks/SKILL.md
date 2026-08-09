@@ -1,0 +1,59 @@
+---
+name: training-monitoring-callbacks
+description: 'Configure live training monitoring for segmentation_tools_pt (activation-stats histograms, validation prediction overlays) and custom TrainCallback hooks like early stopping. Use when a user asks "how do I watch training?", "dying features?", "save prediction overlays", "add early stopping", or is editing the monitoring.* block. Emits the monitoring.* block for train.yaml.'
+argument-hint: '[optional] what do you want to monitor'
+user-invocable: true
+disable-model-invocation: false
+---
+# Training Monitoring & Callbacks
+
+Two built-in callbacks are enabled by default via the `monitoring:` section, and you can add custom
+`TrainCallback` hooks from a notebook.
+
+## Built-in callbacks (`monitoring.*` in `configs/train.yaml`)
+
+| Callback | Output | Purpose |
+|---|---|---|
+| `ActivationStatsCallback` | `checkpoints/activation_stats/epochNNN/...png` | fastai-style activation histograms; bright band at bin 0 = dying features |
+| `PredOverlayCallback` | `checkpoints/predictions/epochNNN/val_batchN_{labels,pred,compare}.jpg` | YOLO-style GT vs prediction mosaics each epoch |
+
+```yaml
+monitoring:
+  activation_stats: {enabled: true, every: 1, n_bins: 40, hist_range: [0, 10], max_layers: 6}
+  pred_overlays:    {enabled: true, every: 1, max_val_batches: 3, jpeg_quality: 90}
+```
+
+Disable either with `monitoring.activation_stats.enabled=false` / `monitoring.pred_overlays.enabled=false`.
+
+## Custom callbacks (from a notebook, not the CLI)
+
+Subclass `TrainCallback`, override only the hooks you need, and pass `callbacks=[...]` to `train()`.
+Set `state.stop_training = True` for early stopping. Hooks fire at train/epoch/batch/checkpoint
+granularity; lower `TrainCallback.order` runs first.
+
+```python
+from segmentation_tools_pt.train import TrainCallback, train
+
+class EarlyStopping(TrainCallback):
+    def __init__(self, patience=10):
+        self.patience, self.wait, self.best = patience, 0, 0.0
+    def on_epoch_end(self, state):
+        s = state.val_metrics[state.best_metric]
+        if s > self.best: self.best, self.wait = s, 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience: state.stop_training = True
+
+history = train(..., callbacks=[EarlyStopping(patience=10)])
+```
+
+## What this skill emits
+
+- The `monitoring:` block for `configs/train.yaml`, and (for custom hooks) a notebook snippet — the
+  CLI wires only the two default callbacks via `build_default_callbacks()`.
+
+## Library anchors
+
+- `src/segmentation_tools_pt/train.py` — `TrainState`, `TrainCallback`, `ActivationStatsCallback`,
+  `PredOverlayCallback`, `build_default_callbacks`.
+- Source notebooks: `nbs/10_train.ipynb`, `nbs/12_visualize.ipynb`.

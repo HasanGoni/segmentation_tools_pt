@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "segmentation_tools_pt"
+dynamic = ["version"]
+description = ""
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [{name = "Goni Mohammed Hasan", email = "hasanme1412@gmail.com"}]
+keywords = ['nbdev']
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "albumentations>=2.0.8",
+    #"numpy",
+    #"opencv-python-headless",
+    #"matplotlib",
+    #"albumentations",
+    #"onnx",
+    #"onnxruntime",
+    "fastcore>=1.13.2",
+    "hydra-core>=1.3",
+    "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
+    "jupyterlab>=4.5.7",
+    "nbdev>=3.0.17",
+    "opencv-python-headless",
+    "segmentation-models-pytorch>=0.5.0",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+]
+
+[project.urls]
+Repository = "https://github.com/HasanGoni/segmentation_tools_pt"
+Documentation = "https://hasangoni.github.io/segmentation_tools_pt/"
+
+[project.scripts]
+segpt-build  = "segmentation_tools_pt.cli:segpt_build"
+segpt-train  = "segmentation_tools_pt.cli:segpt_train"
+segpt-submit = "segmentation_tools_pt.cli:segpt_submit"
+
+[project.entry-points.nbdev]
+segmentation_tools_pt = "segmentation_tools_pt._modidx:d"
+
+[tool.setuptools.dynamic]
+version = {attr = "segmentation_tools_pt.__version__"}
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.nbdev]
+lib_path = "src/segmentation_tools_pt"

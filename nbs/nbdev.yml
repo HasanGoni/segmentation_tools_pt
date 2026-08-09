@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "segmentation_tools_pt"
+  site-url: "https://hasangoni.github.io/segmentation_tools_pt"
+  description: ""
+  repo-branch: main
+  repo-url: "https://github.com/HasanGoni/segmentation_tools_pt"

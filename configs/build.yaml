@@ -1,0 +1,26 @@
+# Hydra config for patch-cache preparation (segpt-build).
+# Override on the CLI, e.g.:
+#   segpt-build configs/build.yaml data.force_rebuild=true patch.patch_size=512
+
+defaults:
+  - data_patch
+  - _self_
+
+hydra:
+  job:
+    chdir: false            # keep cwd — patch_dir is an absolute path
+
+data:
+  build_only: true
+
+hpc:
+  job_name: segpt_build
+  queue: batch
+  device: cpu
+  interactive: true
+  num_cpus: 16
+  mem_gb: 64
+  resource_select: ""
+  project: ""
+  env_activate: "source .venv/bin/activate"
+  repo_dir: "/path/to/segmentation_tools_pt"

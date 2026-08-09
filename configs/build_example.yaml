@@ -1,0 +1,50 @@
+# Example patch-build config — copy to your project and edit paths.
+# Run:  segpt-build /path/to/this/file.yaml
+#
+# Shares data + patch settings with train.yaml via defaults: [data_patch].
+# Edit raw_dir / patch_dir here or in a local data_patch override.
+
+defaults:
+  - data_patch
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+
+data:
+  raw_dir: ???              # REQUIRED: folder with images/ and masks/
+  patch_dir: ???            # REQUIRED: output patch cache
+  build_only: true
+  data_mode: single
+  mask_suffix: ""
+  exts: .png
+  force_rebuild: false
+  fit_rects: false
+
+patch:
+  patch_size: 256
+  stride: 128
+  min_fg_pixels: 50
+  max_empty_frac: 0.10
+  val_fraction: 0.20
+  seed: 42
+  num_workers: 8            # parallel sample workers — tune for HPC CPU count
+
+train:
+  num_classes: 1
+
+model:
+  in_channels: 1            # must match data_mode
+
+hpc:
+  job_name: segpt_build
+  queue: normal
+  device: cpu
+  interactive: true
+  num_cpus: 16
+  mem_gb: 64
+  resource_select: ""
+  project: ""
+  env_activate: "conda activate segpt"
+  repo_dir: "$HOME/segmentation_tools_pt"

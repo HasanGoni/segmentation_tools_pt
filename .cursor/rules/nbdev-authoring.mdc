@@ -1,0 +1,42 @@
+---
+description: Conventions for authoring nbdev notebooks in this segmentation library
+globs: nbs/**/*.ipynb
+alwaysApply: false
+---
+
+# nbdev authoring conventions
+
+This library is authored in Jupyter notebooks under `nbs/` and exported to
+`src/segmentation_tools_pt/` by nbdev. Notebooks are the source of truth; never
+hand-edit files under `src/`.
+
+## Environment
+- Code runs on a Linux HPC via a Jupyter server. The local `.venv` holds Linux
+  binaries and cannot be executed on Windows.
+- To regenerate `src/` from notebooks without torch, use the Windows miniforge
+  Python:
+  `python -c "from nbdev.doclinks import nbdev_export; nbdev_export.__wrapped__()"`
+- Run the runtime/torch test cells with `nbdev_test` on the Linux side.
+
+## One notebook = one module
+- Each notebook starts with a title markdown cell and `#| default_exp <module>`.
+- Keep modules single-responsibility (see the plan's module map). A function does
+  exactly one thing; compose small functions rather than writing large ones.
+
+## Experiment-first cell order (per function)
+1. Experiment cell: build a small synthetic sample (image/mask/tensor), run the
+   raw logic inline, and print or plot the output to confirm it works.
+2. Export cell (`#| export`): promote the working code into a function with a
+   fastai-style docstring and a one-line usage example. Type every argument and
+   add a short trailing comment explaining non-obvious parameters.
+3. Test cell: assert the function's behavior on the synthetic sample. These cells
+   double as the test suite under `nbdev_test`.
+
+## Style
+- Explicit imports at the top of the notebook.
+- Generic by default: support multi-channel inputs and multi-category (multi-class)
+  masks. Binary segmentation is the C=1 special case, not a separate code path.
+- Notebooks must run with no external data: synthesize tiny samples. Provide a
+  clearly-commented hook to point at real data paths.
+- Write code that reads like natural language; prefer explicit over clever so the
+  notebook is still understandable years later.

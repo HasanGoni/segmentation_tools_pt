@@ -1,0 +1,29 @@
+# Shared data + patch settings for segpt-build and segpt-train.
+# Included via Hydra defaults:  defaults: [data_patch, _self_]
+
+data:
+  raw_dir: /path/to/dataset/train
+  patch_dir: /path/to/dataset/train_patches
+  patch_mode: true
+  data_mode: single         # single | single_repeat_3 | single_to_3 | two_channel | three_channel
+  mask_suffix: ""
+  exts: .png
+  force_rebuild: false
+  fit_rects: true
+
+patch:
+  patch_size: 656
+  stride: 328               # 50% overlap
+  min_fg_pixels: 50
+  max_empty_frac: 0.10
+  val_fraction: 0.20
+  seed: 42
+  num_workers: 8            # parallel sample workers (ProcessPoolExecutor)
+
+train:
+  num_classes: 1
+  seed: 42
+  deterministic: true
+
+model:
+  in_channels: 1            # must match data_mode

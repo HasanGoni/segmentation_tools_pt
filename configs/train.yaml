@@ -1,0 +1,122 @@
+# Hydra config for end-to-end segmentation training.
+# Override on the CLI, e.g.:
+#   segpt-train configs/train.yaml data.raw_dir=/path/to/raw train.epochs=80
+#
+# Shares data + patch settings with segpt-build via defaults: [data_patch].
+
+defaults:
+  - data_patch
+  - _self_
+
+data:
+  build_only: false
+
+model:
+  architecture: unet       # smp head: unet | fpn | deeplabv3plus | unetplusplus | ...
+  arch: mobilenet_v2      # smp encoder / backbone (any name from list_smp_encoders())
+  pretrained: false
+  weights_path: /path/to/models/mobilenet_v2.pth
+                            # local encoder .pth for air-gapped HPC (from download_encoder_weights)
+                            # set to null to download from internet instead
+
+train:
+  epochs: 100
+  batch_size: 16
+  encoder_lr: 1.0e-4
+  decoder_lr: 1.0e-3
+  freeze_epochs: 5
+  crop_size: 656           # model-view crop size; must be <= patch.patch_size in patch mode
+  use_amp: true
+  save_every: 5
+  resume: false
+  resume_from: null
+  device: cuda
+  num_workers: 4            # DataLoader workers — needs TMPDIR=/tmp on HPC
+
+loss:
+  alpha: 0.7
+  beta: 0.3
+  gamma: 1.33
+  phases:
+    - until_epoch: 10
+      w_tversky: 0.6
+      w_dice: 0.4
+      w_boundary: 0.0
+    - until_epoch: 35
+      w_tversky: 0.5
+      w_dice: 0.3
+      w_boundary: 0.2
+    - until_epoch: -1
+      w_tversky: 0.4
+      w_dice: 0.3
+      w_boundary: 0.3
+
+metrics:
+  threshold: 0.5
+  best_metric: iou
+
+augment:
+  preset: yolo26m
+  translate: null
+  scale: null
+  degrees: null
+  shear: null
+  perspective: 0.0
+  fliplr: 0.0
+  flipud: 0.0
+  hsv_h: null
+  hsv_s: null
+  hsv_v: null
+  bgr: 0.0
+  erasing: 0.0
+  erasing_scale_min: 0.02
+  erasing_scale_max: 0.33
+  erasing_ratio_min: 0.3
+  erasing_ratio_max: 3.3
+  erasing_fill: 0.0
+  mosaic: 0.0
+  mixup: 0.05
+  cutmix: 0.0
+  copy_paste: 0.110
+  copy_paste_mode: flip
+  close_mosaic: 0
+  extra_legacy: false
+  flips: false
+  boundary_blur: 0.4              # probability; 0 = disabled
+  boundary_blur_width: [5, 21]    # morphological edge band (pixels, odd)
+  boundary_blur_sigma: [3, 11]    # Gaussian sigma for edge smearing
+  boundary_halo_brightness: [0.0, 0.15]  # outer-band brighten; [0, 0] = blur only
+
+monitoring:
+  activation_stats:
+    enabled: true
+    every: 1              # collect histogram every N train batches
+    n_bins: 40
+    hist_range: [0, 10]   # histc min/max for activation values
+    max_layers: 6         # evenly spaced Conv/BN hooks across the model
+  pred_overlays:
+    enabled: true
+    every: 1              # save overlays every N epochs
+    max_val_batches: 3    # YOLO-style: first N validation batches
+    jpeg_quality: 90
+
+export:
+  onnx: false
+  opset: 18
+  verify: true
+
+hpc:
+  job_name: segpt_train
+  queue: gpu
+  device: gpu
+  interactive: true
+  num_gpus: 1
+  j_exclusive: true
+  gpu_mem_gb: 24
+  host: ""
+  num_cpus: 8
+  mem_gb: 200
+  resource_select: ""
+  project: ""
+  env_activate: "source .venv/bin/activate"
+  repo_dir: "/path/to/segmentation_tools_pt"

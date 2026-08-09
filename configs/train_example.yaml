@@ -1,0 +1,133 @@
+# Example training config — copy to your project and edit paths.
+# Run:  segpt-train /path/to/this/file.yaml
+#
+# Shares data + patch settings with build.yaml via defaults: [data_patch].
+
+defaults:
+  - data_patch
+  - _self_
+
+data:
+  raw_dir: ???
+  patch_dir: ???
+  build_only: false
+  data_mode: single
+  mask_suffix: ""
+  exts: .png
+  force_rebuild: false
+  fit_rects: false
+
+patch:
+  patch_size: 256
+  stride: 128
+  min_fg_pixels: 50
+  max_empty_frac: 0.10
+  val_fraction: 0.20
+  seed: 42
+  num_workers: 4
+
+model:
+  architecture: unet        # smp segmentation head
+  arch: mobilenet_v2      # smp encoder / backbone
+  in_channels: 1
+  pretrained: true
+  weights_path: /path/to/models/mobilenet_v2.pth
+
+train:
+  num_classes: 1
+  epochs: 60
+  batch_size: 16
+  encoder_lr: 1.0e-4
+  decoder_lr: 1.0e-3
+  freeze_epochs: 5
+  crop_size: 256
+  use_amp: true
+  save_every: 5
+  resume: true
+  resume_from: null
+  device: cuda
+  num_workers: 4
+  seed: 42
+  deterministic: true
+
+loss:
+  alpha: 0.7
+  beta: 0.3
+  gamma: 1.33
+  phases:
+    - until_epoch: 10
+      w_tversky: 0.6
+      w_dice: 0.4
+      w_boundary: 0.0
+    - until_epoch: 35
+      w_tversky: 0.5
+      w_dice: 0.3
+      w_boundary: 0.2
+    - until_epoch: -1
+      w_tversky: 0.4
+      w_dice: 0.3
+      w_boundary: 0.3
+
+metrics:
+  threshold: 0.5
+  best_metric: iou
+
+augment:
+  preset: yolo26m
+  translate: 0.10
+  scale: 0.30
+  degrees: 0.0
+  shear: 0.0
+  perspective: 0.0
+  fliplr: 0.0
+  flipud: 0.0
+  hsv_h: null
+  hsv_s: null
+  hsv_v: null
+  bgr: 0.0
+  erasing: 0.0
+  mosaic: 0.0
+  mixup: 0.05
+  cutmix: 0.0
+  copy_paste: 0.10
+  copy_paste_mode: flip
+  close_mosaic: 0
+  extra_legacy: false
+  boundary_blur: 0.4
+  boundary_blur_width: [5, 21]
+  boundary_blur_sigma: [3, 11]
+  boundary_halo_brightness: [0.0, 0.15]
+
+monitoring:
+  activation_stats:
+    enabled: true
+    every: 1
+    n_bins: 40
+    hist_range: [0, 10]
+    max_layers: 6
+  pred_overlays:
+    enabled: true
+    every: 1
+    max_val_batches: 3
+    jpeg_quality: 90
+
+export:
+  onnx: true
+  opset: 18
+  verify: true
+
+hpc:
+  job_name: segpt_train
+  queue: gpu
+  device: gpu
+  interactive: true
+  num_gpus: 3
+  j_exclusive: true
+  gpu_mem_gb: 24
+  host: ""
+  num_cpus: 8
+  mem_gb: 200
+  resource_select: ""
+  project: ""
+  env_activate: "conda activate segpt"
+  repo_dir: "$HOME/segmentation_tools_pt"
