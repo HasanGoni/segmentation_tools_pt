@@ -1,6 +1,6 @@
 ---
 name: segmentation-project-planner
-description: 'Entry-point interview that plans a full segmentation run for segmentation_tools_pt. Use when a user says "I need a segmentation script/model", "start a new segmentation project", "help me set up training", or is unsure which tiling / loss / augmentation / model options to pick. Interviews the user, then routes to the choose-* sub-skills and emits matched configs/build.yaml + configs/train.yaml and the segpt-build / segpt-train / segpt-submit commands.'
+description: 'Entry-point interview that plans a full segmentation run for segmentation_tools_pt. Use when a user says "I need a segmentation script/model", "start a new segmentation project", "help me set up training", "my classes overlap", "multilabel segmentation", or is unsure which tiling / loss / augmentation / model options to pick. Interviews the user, then routes to the choose-* sub-skills (or the multilabel branch for overlapping classes) and emits matched configs/build.yaml + configs/train.yaml and the segpt-build / segpt-train / segpt-submit commands.'
 argument-hint: '[optional] one-line problem description (task, image size, defect type)'
 user-invocable: true
 disable-model-invocation: false
@@ -30,18 +30,44 @@ Every recommendation is cross-checked by two panels, and you state which panel d
 
 ## The interview (ask in this order; skip any the user already answered)
 
-1. **Task type** — binary defect (1 class, sigmoid) or multi-class label map (`>1`, softmax)?
-   → sets `train.num_classes`.
+1. **Task type** — binary defect (1 class, sigmoid), multi-class label map (`>1`, mutually
+   exclusive, softmax), or **multilabel with overlap** (`>1` independent sigmoid heads, e.g. a
+   `void` defect that sits inside a `chip` region, or a `lifted` region mostly coextensive with
+   `chip`)? If classes can be true in the same pixel at once, it's multilabel, not multi-class —
+   softmax+argmax would silently destroy the overlap.
+   → sets `train.num_classes` and `train.task` (`binary` | `multiclass` | `multilabel`).
+   → multilabel also sets `data.mask_mode` (`stacked` or `per_class_files`) and
+   `data.class_names`; see **Multilabel branch** below.
 2. **Source image size & channels** — how large are the raw images, grayscale or multi-file?
    → routes to **choose-channels** (`data.data_mode`, `model.in_channels`) and informs tiling.
 3. **Defect sparsity & size** — tiny sparse defects, or large regions filling the frame?
    → drives **choose-loss-function** (Tversky vs BCE) and **choose-tiling-strategy** (oversampling).
 4. **Orientation sensitivity** — is the imaging geometry fixed (e.g. fixed-camera X-ray)?
    → drives **choose-augmentation** (flips on/off).
-5. **Compute target** — local GPU or a shared LSF/Slurm cluster? which queue / GPU memory?
-   → sets `train.batch_size` / `train.crop_size` feasibility and the `hpc.*` submission block.
+5. **Compute target** — local GPU or Infineon HPC (LSF)? which queue / GPU memory?
+   → routes to **submit-to-hpc** and sets `train.batch_size` / `train.crop_size` feasibility.
 6. **Pretrained weights availability** — internet or air-gapped node?
    → routes to **choose-model-architecture** (`model.weights_path`, `download_encoder_weights`).
+
+## Multilabel branch (task type = overlap, e.g. chip/void/lifted)
+
+Skip `choose-*` softmax framing entirely and follow this instead:
+
+- Start from `configs/train_multilabel_3head.yaml` (a preset, not a template to derive by hand):
+  `train.num_classes=3`, `train.task=multilabel`, `data.mask_mode=per_class_files`,
+  `data.class_names=[chip, void, lifted]`, `metrics.threshold` as a **list**, one per class.
+- On-disk masks: either one stacked `(H,W,K)` PNG per sample (`mask_mode=stacked`,
+  `data.mask_channels=K`) or `<sample_id>_<class_name>.png` per class
+  (`mask_mode=per_class_files`, needs `data.class_names`). Overlapping foreground pixels across
+  files/channels are valid and expected.
+- If one class is a strict subset of another (e.g. `lifted` always inside `chip`), set
+  `train.hierarchy.<sub>_subset_of_<super>: true` (e.g. `lifted_subset_of_chip: true`). This
+  both trains a soft regularizer pulling the sub-channel back inside the super-channel, and gets
+  baked into the exported ONNX file's metadata for the inference-side consumer.
+- Do **not** route this to the `multi-class-segmentation` skill — that skill is softmax/argmax
+  and will destroy the overlap; it has its own callout pointing back here.
+- Full detail, the decision tree, and a runnable consumer-side ONNX decode example live in
+  `docs/MULTILABEL_OVERLAP.md`.
 
 ## Routing table (delegate each decision)
 
@@ -55,9 +81,11 @@ Every recommendation is cross-checked by two panels, and you state which panel d
 | Metric to optimise, threshold | `configure-metrics-checkpointing` | `metrics.*` |
 | Epochs / lr / freeze / resume | `configure-training-schedule` | `train.*` |
 | Live monitoring | `training-monitoring-callbacks` | `monitoring.*` |
+| HPC submission | `submit-to-hpc` | `hpc.*` |
 | Mask cleanup before build | `mask-preprocessing` | `data.fit_rects` (+ placeholders) |
 | Full-image prediction | `run-inference` | post-training |
-| ONNX deployment | `export-onnx` | `export.*` |
+| ONNX deployment | `export-onnx` | `export.*` (multilabel: also `task`/`class_names`/`thresholds`/`hierarchy_pairs` metadata) |
+| Overlapping classes (multilabel) | *(this skill's Multilabel branch — not a sub-skill)* | `train.task`, `data.mask_mode`, `data.class_names`, `train.hierarchy.*` |
 
 ## What this skill emits
 
@@ -65,7 +93,8 @@ Every recommendation is cross-checked by two panels, and you state which panel d
 2. A copy of `configs/build_example.yaml` → `<project>/build.yaml` with `data.raw_dir`,
    `data.patch_dir`, `data.data_mode`, and `patch.*` filled from the interview.
 3. A copy of `configs/train_example.yaml` → `<project>/train.yaml` with `model.*`, `loss.*`,
-   `augment.*`, `metrics.*`, `train.*`, `monitoring.*`, `hpc.*` filled from the sub-skills.
+   `augment.*`, `metrics.*`, `train.*`, `monitoring.*`, `hpc.*` filled from the sub-skills — or, for
+   the multilabel branch, `configs/train_multilabel_3head.yaml` as the base instead.
 4. The runnable commands:
    - `segpt-build <project>/build.yaml`
    - `segpt-train <project>/train.yaml`
@@ -85,5 +114,8 @@ Every recommendation is cross-checked by two panels, and you state which panel d
 - `train.num_classes`, `data.data_mode`/`model.in_channels`, tiling, loss, and augmentation are all
   resolved (each by its sub-skill) and consistent (`train.crop_size <= patch.patch_size` in patch mode;
   `model.in_channels` matches `data.data_mode`).
+- If multilabel: `train.task=multilabel`, `data.class_names` length matches `train.num_classes`,
+  `metrics.threshold` is a list of the same length (not a single float), and any hierarchy
+  relationship the user described is captured in `train.hierarchy.*`.
 - The user has two runnable configs and the exact CLI commands.
 - Every unimplemented request is flagged, not silently dropped.

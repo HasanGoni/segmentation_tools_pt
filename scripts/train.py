@@ -28,7 +28,10 @@ from segmentation_tools_pt.export import export_onnx
 from segmentation_tools_pt.hydra_pipeline import (
     resolve_boundary_blur_cfg,
     resolve_deterministic,
+    resolve_hierarchy_pairs,
+    resolve_mask_cfg,
     resolve_run_seed,
+    resolve_task,
     run_direct_pipeline,
     run_patch_pipeline,
     validate_data_mode_channels,
@@ -36,6 +39,12 @@ from segmentation_tools_pt.hydra_pipeline import (
 )
 from segmentation_tools_pt.model import get_model
 from segmentation_tools_pt.train import build_default_callbacks, train
+
+
+def _resolve_threshold(cfg: DictConfig):
+    """`metrics.threshold` as a plain float or list (OmegaConf ListConfig -> list, for task='multilabel')."""
+    th = cfg.metrics.threshold
+    return OmegaConf.to_container(th, resolve=True) if OmegaConf.is_config(th) else th
 
 
 def _model_kwargs(cfg: DictConfig, in_channels: int, *, pretrained: bool, weights_path=None) -> dict:
@@ -57,6 +66,8 @@ def _export_best_model(
     cfg: DictConfig,
     checkpoint_dir: Path,
     in_channels: int,
+    task: str | None,
+    mask_cfg: dict,
 ) -> None:
     best_path = checkpoint_dir / 'best.pth'
     if not best_path.exists():
@@ -71,6 +82,10 @@ def _export_best_model(
     model.load_state_dict(ckpt['model_state'])
     model = model.to(device)
 
+    class_names = mask_cfg['class_names']
+    hierarchy_pairs = resolve_hierarchy_pairs(cfg, class_names) or None
+    thresholds = _resolve_threshold(cfg) if task == 'multilabel' else None
+
     onnx_path = checkpoint_dir / 'model.onnx'
     export_onnx(
         model,
@@ -79,6 +94,10 @@ def _export_best_model(
         input_size=cfg.train.crop_size,
         opset=cfg.export.opset,
         verify=cfg.export.verify,
+        task=task,
+        class_names=class_names,
+        thresholds=thresholds,
+        hierarchy_pairs=hierarchy_pairs,
     )
     print(f'Exported ONNX → {onnx_path}')
 
@@ -95,6 +114,8 @@ def main(cfg: DictConfig) -> None:
     build_only = bool(cfg.data.get('build_only', False))
     run_seed = resolve_run_seed(cfg)
     deterministic = resolve_deterministic(cfg)
+    task = resolve_task(cfg)
+    mask_cfg = resolve_mask_cfg(cfg)
 
     raw_dir = Path(cfg.data.raw_dir)
     patch_dir = Path(cfg.data.patch_dir)
@@ -110,6 +131,11 @@ def main(cfg: DictConfig) -> None:
     print(f'build_only        : {build_only}')
     print(f'run_seed          : {run_seed}')
     print(f'deterministic     : {deterministic}')
+    print(f'task              : {task or "(auto)"}')
+    print(f'mask_mode         : {mask_cfg["mask_mode"]}')
+    if mask_cfg['mask_mode'] != 'single':
+        print(f'mask_channels     : {mask_cfg["mask_channels"]}')
+        print(f'class_names       : {mask_cfg["class_names"]}')
 
     set_seed(run_seed, deterministic=deterministic)
 
@@ -121,6 +147,8 @@ def main(cfg: DictConfig) -> None:
         n_channels=n_source,
         exts=cfg.data.exts,
         mask_suffix=mask_suffix,
+        mask_mode=mask_cfg['mask_mode'],
+        class_names=mask_cfg['class_names'],
     )
     print(f'\nDiscovered {len(sample_ids)} samples in {raw_dir}')
 
@@ -206,7 +234,7 @@ def main(cfg: DictConfig) -> None:
     hist_range = act_cfg.get('hist_range', [0, 10])
     callbacks = build_default_callbacks(
         checkpoint_dir=str(checkpoint_dir),
-        threshold=cfg.metrics.threshold,
+        threshold=_resolve_threshold(cfg),
         activation_stats=bool(act_cfg.get('enabled', True)),
         pred_overlays=bool(pred_cfg.get('enabled', True)),
         num_classes=cfg.train.num_classes,
@@ -217,6 +245,8 @@ def main(cfg: DictConfig) -> None:
         pred_every=int(pred_cfg.get('every', 1)),
         pred_max_val_batches=int(pred_cfg.get('max_val_batches', 3)),
         pred_jpeg_quality=int(pred_cfg.get('jpeg_quality', 90)),
+        task=task,
+        class_names=mask_cfg['class_names'],
     )
 
     history = train(
@@ -245,13 +275,15 @@ def main(cfg: DictConfig) -> None:
         loss_beta=cfg.loss.beta,
         loss_gamma=cfg.loss.gamma,
         loss_phases=loss_phases,
-        metrics_threshold=cfg.metrics.threshold,
+        metrics_threshold=_resolve_threshold(cfg),
         best_metric=cfg.metrics.best_metric,
         aug=None,
         boundary_blur=boundary_blur,
         num_workers=cfg.train.num_workers,
         seed=run_seed,
         callbacks=callbacks or None,
+        task=task,
+        **mask_cfg,
     )
 
     if history:
@@ -267,7 +299,7 @@ def main(cfg: DictConfig) -> None:
 
     if cfg.export.onnx:
         print('\nExporting best model to ONNX …')
-        _export_best_model(cfg, checkpoint_dir, in_channels)
+        _export_best_model(cfg, checkpoint_dir, in_channels, task, mask_cfg)
 
     print('\nDone.')
 

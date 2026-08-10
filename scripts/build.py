@@ -24,6 +24,7 @@ from segmentation_tools_pt.core import platform_info, set_seed
 from segmentation_tools_pt.dataset_build import discover_samples
 from segmentation_tools_pt.hydra_pipeline import (
     resolve_deterministic,
+    resolve_mask_cfg,
     resolve_run_seed,
     run_patch_pipeline,
     validate_data_mode_channels,
@@ -41,6 +42,7 @@ def main(cfg: DictConfig) -> None:
     n_source, in_channels, channel_names = validate_data_mode_channels(cfg)
     run_seed = resolve_run_seed(cfg)
     deterministic = resolve_deterministic(cfg)
+    mask_cfg = resolve_mask_cfg(cfg)
 
     raw_dir = Path(cfg.data.raw_dir)
     patch_dir = Path(cfg.data.patch_dir)
@@ -56,6 +58,10 @@ def main(cfg: DictConfig) -> None:
     print(f'parallel_workers  : {cfg.patch.num_workers}')
     print(f'run_seed          : {run_seed}')
     print(f'deterministic     : {deterministic}')
+    print(f'mask_mode         : {mask_cfg["mask_mode"]}')
+    if mask_cfg['mask_mode'] != 'single':
+        print(f'mask_channels     : {mask_cfg["mask_channels"]}')
+        print(f'class_names       : {mask_cfg["class_names"]}')
 
     if not bool(cfg.data.get('patch_mode', True)):
         raise ValueError('Patch build requires data.patch_mode=true.')
@@ -73,6 +79,8 @@ def main(cfg: DictConfig) -> None:
         n_channels=n_source,
         exts=cfg.data.exts,
         mask_suffix=mask_suffix,
+        mask_mode=mask_cfg['mask_mode'],
+        class_names=mask_cfg['class_names'],
     )
     print(f'\nDiscovered {len(sample_ids)} samples in {raw_dir}')
 

@@ -19,7 +19,7 @@ dependencies = [
     "albumentations>=2.0.8",
     #"numpy",
     #"opencv-python-headless",
-    #"matplotlib",
+    "matplotlib",
     #"albumentations",
     #"onnx",
     #"onnxruntime",

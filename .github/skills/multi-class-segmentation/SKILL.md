@@ -10,6 +10,13 @@ disable-model-invocation: false
 Configure the library when masks contain integer labels for more than one foreground class
 (`train.num_classes > 1`). The library supports this throughout, but a few defaults change.
 
+> **Classes can overlap in the same pixel (e.g. `void` inside `chip`, `lifted` mostly
+> coextensive with `chip`)?** This skill is the wrong one — multi-class softmax+argmax is
+> mutually exclusive per pixel and will destroy that overlap. Use `train.task: multilabel`
+> instead (independent per-channel sigmoid, one head per class, overlap allowed). See
+> `docs/MULTILABEL_OVERLAP.md` and `configs/train_multilabel_3head.yaml` for the full setup,
+> including optional hierarchy enforcement (`train.hierarchy.<sub>_subset_of_<super>: true`).
+
 ## Key differences from binary
 
 | Aspect | Binary (`num_classes: 1`) | Multi-class (`num_classes: N`) |
