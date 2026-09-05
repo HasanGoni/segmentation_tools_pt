@@ -28,6 +28,7 @@ dependencies = [
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
     "jupyterlab>=4.5.7",
+    "loguru>=0.7.3",
     "nbdev>=3.0.17",
     "opencv-python-headless",
     "segmentation-models-pytorch>=0.5.0",
