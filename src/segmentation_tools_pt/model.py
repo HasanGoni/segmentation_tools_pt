@@ -6,9 +6,9 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/model.html.md"""
 
 # %% auto #0
 __all__ = ['SMP_ARCHITECTURES', 'list_smp_architectures', 'list_smp_encoders', 'get_model', 'download_encoder_weights',
-           'get_param_groups', 'freeze_encoder', 'unfreeze_encoder']
+           'get_param_groups', 'freeze_encoder', 'unfreeze_encoder', 'Dinov3ReassembleEncoder']
 
-# %% ../../nbs/09_model.ipynb #1f2e7e04
+# %% ../../nbs/09_model.ipynb #9c4c48d0
 from typing import List, Optional
 
 import torch
@@ -16,10 +16,10 @@ import torch.nn as nn
 
 
 
-# %% ../../nbs/09_model.ipynb #8518d7bb
+# %% ../../nbs/09_model.ipynb #b985bf3e
 import segmentation_models_pytorch as smp
 
-# %% ../../nbs/09_model.ipynb #42c44f3f
+# %% ../../nbs/09_model.ipynb #bc1493cc
 SMP_ARCHITECTURES = {
     'unet': smp.Unet,
     'unetplusplus': smp.UnetPlusPlus,
@@ -40,7 +40,7 @@ def list_smp_architectures() -> List[str]:
 
 
 def list_smp_encoders() -> List[str]:
-    """Encoder / backbone names from segmentation-models-pytorch."""
+    """Encoder / backbone names from segmentation-models-pytorch (includes registered `dinov3_*`)."""
     return sorted(smp.encoders.get_encoder_names())
 
 
@@ -88,6 +88,8 @@ def get_model(
 
     Pass `weights_path` on air-gapped HPC instead of downloading ImageNet weights.
     Use `list_smp_architectures()` and `list_smp_encoders()` to discover valid names.
+    `encoder='dinov3_vit_small'` / `'dinov3_vit_base'` build a DPT-reassembled DINOv3
+    ViT encoder (see the DINOv3 section below) instead of a CNN backbone.
 
     Example:
         >>> m = get_model('resnet34', architecture='fpn', in_channels=3, num_classes=1, pretrained=False)
@@ -109,9 +111,19 @@ def get_model(
         )
     use_imagenet = pretrained and weights_path is None
     model_cls = SMP_ARCHITECTURES[arch_key]
+    if encoder_name.startswith('dinov3_'):
+        # DINOv3 weights are downloaded inside Dinov3ReassembleEncoder.__init__ via
+        # timm's own hub, not smp's encoder_weights='imagenet' state-dict loader (which
+        # would `load_state_dict` the *whole* encoder, including our reassemble layers,
+        # against a checkpoint that only has the plain ViT backbone -> missing keys).
+        # Thread `pretrained` through the registry's construction params instead.
+        smp.encoders.encoders[encoder_name]['params']['pretrained'] = use_imagenet
+        encoder_weights = None
+    else:
+        encoder_weights = 'imagenet' if use_imagenet else None
     model = model_cls(
         encoder_name=encoder_name,
-        encoder_weights='imagenet' if use_imagenet else None,
+        encoder_weights=encoder_weights,
         in_channels=in_channels,
         classes=num_classes,
         activation=None,
@@ -121,7 +133,7 @@ def get_model(
     return model
 
 
-# %% ../../nbs/09_model.ipynb #5fa43050
+# %% ../../nbs/09_model.ipynb #81442a31
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name  (e.g. 'resnet34', 'efficientnet-b0')
     save_path: str,      # local .pth path to write   (e.g. '/data/weights/resnet34.pth')
@@ -152,7 +164,7 @@ def download_encoder_weights(
     print(f'Saved {encoder_name} encoder  ({n} tensors, {size_mb:.1f} MB)  →  {save_path}')
     del tmp
 
-# %% ../../nbs/09_model.ipynb #c68976b8
+# %% ../../nbs/09_model.ipynb #3ea95939
 def get_param_groups(
     model: nn.Module,        # an smp model (or any model; falls back to one group if no .encoder)
     encoder_lr: float = 1e-4,  # LR for the pretrained encoder
@@ -178,3 +190,102 @@ def unfreeze_encoder(model: nn.Module) -> None:
         return
     for p in model.encoder.parameters():
         p.requires_grad = True
+
+# %% ../../nbs/09_model.ipynb #de253b6b
+import timm
+from segmentation_models_pytorch.encoders._base import EncoderMixin
+
+
+class _Reassemble(nn.Module):
+    "Project a ViT token feature map to `out_ch` channels, then resize to the target stride."
+    def __init__(self, in_ch: int, out_ch: int, scale: float):
+        super().__init__()
+        self.proj = nn.Conv2d(in_ch, out_ch, kernel_size=1)
+        if scale > 1:
+            self.resize = nn.Upsample(scale_factor=scale, mode='bilinear', align_corners=False)
+        elif scale < 1:
+            self.resize = nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=round(1 / scale), padding=1)
+        else:
+            self.resize = nn.Identity()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.resize(self.proj(x))
+
+
+class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
+    """DINOv3 ViT backbone + DPT-style reassemble, exposed as an smp `EncoderMixin`
+    so it can be used as `get_model(arch='dinov3_vit_small', architecture='unet', ...)`.
+
+    Forward returns `[x, stride2, stride4, stride8, stride16, stride32]` — 6 tensors for
+    `depth=5`, matching what a CNN encoder (e.g. resnet34) would return.
+    """
+
+    def __init__(
+        self,
+        model_name: str = 'vit_small_patch16_dinov3',
+        depth: int = 5,
+        output_stride: int = 32,
+        pretrained: bool = True,
+        widths=(64, 96, 192, 384, 384),  # channel widths for stride 2,4,8,16,32
+    ):
+        super().__init__()
+        self._depth = depth
+        self._in_channels = 3
+        self._output_stride = output_stride
+
+        # Always built for 3-channel input; `set_in_channels()` (called by smp's
+        # `get_encoder()` right after construction) adapts the patch-embed conv for
+        # any other `in_channels`, reusing the same weight-averaging trick smp uses
+        # for every other encoder.
+        self.backbone = timm.create_model(
+            model_name, pretrained=pretrained, num_classes=0, dynamic_img_size=True,
+        )
+        embed_dim = self.backbone.embed_dim
+
+        w2, w4, w8, w16, w32 = widths
+        self.reassemble = nn.ModuleList([
+            _Reassemble(embed_dim, w4, scale=4),    # earliest tap  -> stride 4
+            _Reassemble(embed_dim, w8, scale=2),    # ..            -> stride 8
+            _Reassemble(embed_dim, w16, scale=1),   # ..            -> stride 16
+            _Reassemble(embed_dim, w32, scale=0.5), # last tap      -> stride 32
+        ])
+        # ViT has no native high-res feature -- synthesize stride 2 by upsampling
+        # the stride-4 map instead of leaving the decoder's shallowest skip empty.
+        self.stem_up = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(w4, w2, kernel_size=3, padding=1),
+        )
+        self._out_channels = (3, w2, w4, w8, w16, w32)
+
+    def set_in_channels(self, in_channels: int, pretrained: bool = True) -> None:
+        "Adapt the patch-embed conv in place; `in_chans` can't be set after `timm.create_model`."
+        if in_channels == 3:
+            return
+        from segmentation_models_pytorch.encoders._utils import patch_first_conv
+        self._in_channels = in_channels
+        self._out_channels = (in_channels,) + self._out_channels[1:]
+        patch_first_conv(self.backbone, new_in_channels=in_channels, pretrained=pretrained)
+
+    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+        feats = self.backbone.forward_intermediates(
+            x, indices=4, output_fmt='NCHW', intermediates_only=True,
+        )
+        stride4, stride8, stride16, stride32 = [r(f) for r, f in zip(self.reassemble, feats)]
+        stride2 = self.stem_up(stride4)
+        return [x, stride2, stride4, stride8, stride16, stride32]
+
+
+def _register_dinov3_encoders() -> None:
+    "Register the DINOv3 encoders into smp so `list_smp_encoders()` and `get_model()` see them."
+    for name, model_name in [
+        ('dinov3_vit_small', 'vit_small_patch16_dinov3'),
+        ('dinov3_vit_base', 'vit_base_patch16_dinov3'),
+    ]:
+        smp.encoders.encoders[name] = {
+            'encoder': Dinov3ReassembleEncoder,
+            'pretrained_settings': {},  # unused -- pretrained loading happens in __init__ via timm's hub
+            'params': {'model_name': model_name, 'pretrained': True},
+        }
+
+_register_dinov3_encoders()
+

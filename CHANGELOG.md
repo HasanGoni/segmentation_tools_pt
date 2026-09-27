@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-09-27
+
+Added a DINOv3 encoder-decoder (`nbs/09_model.ipynb`) — the library had no ViT-based backbone, only smp's CNN encoders.
+
+- Added `Dinov3ReassembleEncoder`: wraps `timm`'s `vit_*_patch16_dinov3` (already available via `timm>=1.0.28`, added as a direct dependency) and reassembles 4 tapped transformer layers into a stride `[2,4,8,16,32]` pseudo-pyramid (DPT-style), the missing stride-2 skip synthesized by upsampling the stride-4 map. Registered into `smp.encoders.encoders` as `dinov3_vit_small` / `dinov3_vit_base`, so it works through the existing `get_model(arch='dinov3_vit_small', architecture='unet'|'fpn'|..., ...)` call — no new API, `get_param_groups` / `freeze_encoder` / `unfreeze_encoder` / Hydra configs unchanged.
+- Pretrained DINOv3 weights load via `timm`'s own hub download at construction time, not smp's `encoder_weights='imagenet'` state-dict loader (which would `load_state_dict` the whole encoder against a checkpoint missing the reassemble layers); `get_model()` threads `pretrained` through the registry's construction params instead and forces `encoder_weights=None` for `dinov3_*` encoders.
+- Single/multi-channel input (`in_channels=1,2,3,...`) works via the existing `EncoderMixin.set_in_channels` → `patch_first_conv` path, reusing the same weight-averaging convention as every other encoder in the library.
+- Fixed a pre-existing `NameError`/`FileNotFoundError` in `nbs/09_model.ipynb`'s local-weights scratch cells (missing `Path` import) by marking them `#| eval: false` so `nbdev-test` skips them instead of failing before reaching the exported cells.
+
 ## 2026-07-16
 
 Single-channel patch naming fix + HPC workflow gate + patch-config update for new dataset.
