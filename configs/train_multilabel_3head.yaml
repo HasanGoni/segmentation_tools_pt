@@ -8,6 +8,7 @@
 
 defaults:
   - data_patch
+  - model: dinov3_vit_small  # primary recommendation; shut-off with model=mobilenet_v2
   - _self_
 
 data:
@@ -32,12 +33,8 @@ patch:
   seed: 42
   num_workers: 4
 
-model:
-  architecture: unet        # smp segmentation head
-  arch: mobilenet_v2      # smp encoder / backbone
-  in_channels: 1
-  pretrained: true
-  weights_path: /path/to/smp_models/mobilenet_v2.pth
+# model.* from configs/model/dinov3_vit_small.yaml; in_channels from data_patch (1 for single).
+# Throughput alternative: model=convnext_tiny. Shut-off: model=mobilenet_v2.
 
 train:
   num_classes: 3             # K = len(data.class_names); one sigmoid head per class

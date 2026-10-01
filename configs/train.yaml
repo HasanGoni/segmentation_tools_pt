@@ -6,18 +6,14 @@
 
 defaults:
   - data_patch
+  - model: mobilenet_v2   # library default; switch with model=dinov3_vit_small|convnext_tiny|efficientnetv2_s
   - _self_
 
 data:
   build_only: false
 
-model:
-  architecture: unet       # smp head: unet | fpn | deeplabv3plus | unetplusplus | ...
-  arch: mobilenet_v2      # smp encoder / backbone (any name from list_smp_encoders())
-  pretrained: false
-  weights_path: /path/to/models/mobilenet_v2.pth
-                            # local encoder .pth for air-gapped HPC (from download_encoder_weights)
-                            # set to null to download from internet instead
+# model.* comes from configs/model/<name>.yaml (architecture, arch, pretrained, weights_path).
+# data_patch supplies model.in_channels. Override any field on the CLI, e.g. model.pretrained=true.
 
 train:
   epochs: 100

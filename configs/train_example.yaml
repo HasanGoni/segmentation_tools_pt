@@ -5,6 +5,7 @@
 
 defaults:
   - data_patch
+  - model: mobilenet_v2   # or dinov3_vit_small | convnext_tiny | efficientnetv2_s
   - _self_
 
 data:
@@ -26,12 +27,7 @@ patch:
   seed: 42
   num_workers: 4
 
-model:
-  architecture: unet        # smp segmentation head
-  arch: mobilenet_v2      # smp encoder / backbone
-  in_channels: 1
-  pretrained: true
-  weights_path: /path/to/models/mobilenet_v2.pth
+# model.* from configs/model/<name>.yaml; override e.g. model.weights_path=/path/to/enc.pth
 
 train:
   num_classes: 1

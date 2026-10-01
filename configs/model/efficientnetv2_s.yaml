@@ -1,0 +1,6 @@
+# Curated EfficientNetV2-S package (alias → tu-tf_efficientnetv2_s via get_model).
+# Compose: defaults: [model: efficientnetv2_s]  or  CLI: model=efficientnetv2_s
+architecture: unet
+arch: efficientnetv2_s
+pretrained: true
+weights_path: null

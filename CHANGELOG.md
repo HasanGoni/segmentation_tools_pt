@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-01
+
+Curated encoders + Hydra encoder preset packages (#15).
+
+- `get_model` / `list_smp_encoders` treat curated aliases as first-class: `convnext_tiny` → `tu-convnext_tiny`, `efficientnetv2_s` → `tu-tf_efficientnetv2_s`; raw curated `tu-*` builds without warnings; other `tu-*` warn once; unknown non-`tu-*` hard-error.
+- Added Hydra packages under `configs/model/` (`mobilenet_v2`, `dinov3_vit_small`, `convnext_tiny`, `efficientnetv2_s`) setting `model.*` only. `configs/train.yaml` composes MobileNet (library default); `train_multilabel_3head.yaml` composes DINOv3-S (primary recommendation). Shut-off = `model=mobilenet_v2`.
+- Updated `choose-model-architecture` skill for curated vs experimental guidance.
+- Synthetic nbdev tests: allowlist/warn-once, Hydra compose, curated `export_onnx` smoke via `get_model`.
+
 ## 2026-09-27
 
 Added a DINOv3 encoder-decoder (`nbs/09_model.ipynb`) — the library had no ViT-based backbone, only smp's CNN encoders.

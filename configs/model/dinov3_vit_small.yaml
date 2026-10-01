@@ -1,0 +1,7 @@
+# Primary recommendation for Chip/Void/Lifted (and similar layout-shift recipes).
+# Compose: defaults: [model: dinov3_vit_small]  or  CLI: model=dinov3_vit_small
+# Sets model.* only — freeze/LR stay on the train/recipe config.
+architecture: unet
+arch: dinov3_vit_small
+pretrained: true
+weights_path: null   # timm hub when pretrained; set a local path on air-gapped HPC

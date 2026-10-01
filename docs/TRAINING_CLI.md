@@ -352,7 +352,14 @@ model:
   weights_path: /data/weights/resnet34.pth
 ```
 
----
+Or switch a curated encoder package (sets `model.*` only; shut-off = MobileNet):
+
+```bash
+segpt-train configs/train.yaml model=dinov3_vit_small
+segpt-train configs/train_multilabel_3head.yaml model=mobilenet_v2   # shut-off
+```
+
+Packages live under `configs/model/` (`mobilenet_v2`, `dinov3_vit_small`, `convnext_tiny`, `efficientnetv2_s`).
 
 ## 9. Use from another project folder
 

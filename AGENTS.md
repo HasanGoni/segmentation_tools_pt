@@ -49,9 +49,9 @@ The `.py` files in `src/` are generated artifacts.
 
 ```bash
 # After editing any notebook:
-nbdev_export        # regenerate src/ from nbs/
-nbdev_test          # run all in-notebook tests
-nbdev_preview       # local docs preview (Quarto)
+nbdev-export        # regenerate src/ from nbs/
+nbdev-test          # run all in-notebook tests
+nbdev-preview       # local docs preview (Quarto)
 ```
 
 On NFS mounts, verify agent edits landed on disk before export — see `.cursor/skills/nbdev-notebook-verify/SKILL.md`.
@@ -694,3 +694,45 @@ impractical for very large ones. Use one of these strategies instead:
 | Very large + fast iteration needed | Switch to `data.patch_mode: false` (direct mode) — loads full images with on-the-fly crop, no patch cache at all |
 
 Full guidance: `hpc/README.md` → "Large patch datasets" section.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues are the official board (`gh` CLI); `.scratch/` is for private drafts only. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+### nbdev implementation
+
+All feature work: literate `nbs/` → test steps → `nbdev-export` (never hand-edit `src/`). See `docs/agents/nbdev-implementation-contract.md`.
+
+## Learned User Preferences
+
+- Treat notebooks as literate programs (Knuth/nbdev): narrative before code, exposition order over dump-and-export, tests as footnotes beside the functions they cover; implementation work must follow `docs/agents/nbdev-implementation-contract.md` (stepwise cells → tests → `#| export` → `nbdev-export`; never hand-edit `src/`).
+- Prefer plain language over jargon; define unfamiliar terms briefly when first used (e.g. avoid unexplained words like “canonical”).
+- Prefer a wayfinder decision map before writing a design spec; ship phased tickets (umbrella/design first, then one implementable slice); create map/ticket/spec via the repo’s wayfinder flow rather than waiting indefinitely on grill answers.
+- Prefer reviewing draft agent-config files before they are written to disk.
+- Prefer GitHub Issues as the official tracker (`gh`); keep `.scratch/` for private drafts only.
+- Prefer the default Matt Pocock triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`.
+- On wayfinder grill questions (A/B/C), default to the agent’s expert recommendation for every question unless they explicitly override.
+- Include post-training error analysis in wayfinder/planning (grill-with-docs or related tickets), not only training and export.
+- Prefer config-only control so any segmentation task works by editing Hydra YAML without code changes.
+- Prefer independently toggleable batch-level augmentations in config (mixup, cutmix, mosaic, copy_paste, alone or combined).
+- Prefer default ImageNet encoder weights with freeze warmup, plus a config path to keep the encoder frozen for the full run.
+
+## Learned Workspace Facts
+
+- DINOv3 ViT-S/16 and B/16 are available via `get_model()` as `dinov3_vit_small` / `dinov3_vit_base`; curated aliases `convnext_tiny` / `efficientnetv2_s` (and raw `tu-convnext_tiny` / `tu-tf_efficientnetv2_s`) are first-class in `get_model` / `list_smp_encoders`; Hydra packages live under `configs/model/`.
+- Mask config is resolved with `resolve_mask_cfg(cfg)` → `{mask_mode, mask_channels, class_names}`; there is no `validate_mask_mode` export.
+- Active product focus includes multi-head Chip/Void/LiftedChip segmentation, MatriX↔SAKI domain shift, post-training error analysis, and a config-selectable SMP vs custom UNet factory (ASPP/attention knobs).
+- GitHub remote for this repo is `HasanGoni/segmentation_tools_pt`.
+- FP32 ONNX export works for `dinov3_vit_small` (and raw `tu-*` Unets) at `in_channels=1`, multilabel `num_classes=3`; `onnx`/`onnxruntime` are optional/commented in `pyproject.toml`; INT8/TensorRT not validated.
+- Shared nbdev implementation contract lives at `docs/agents/nbdev-implementation-contract.md`; wayfinder map for multi-head encoder/robustness is tracked on GitHub Issues.
+- Custom UNet/SMP factory design lives at `docs/superpowers/specs/2026-10-01-custom-unet-smp-factory-design.md` (`model.source: smp | custom_unet`; ASPP/attention are v1 options, default off).

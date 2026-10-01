@@ -1,0 +1,6 @@
+# Throughput alternative (curated alias → tu-convnext_tiny via get_model).
+# Compose: defaults: [model: convnext_tiny]  or  CLI: model=convnext_tiny
+architecture: unet
+arch: convnext_tiny
+pretrained: true
+weights_path: null
