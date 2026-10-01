@@ -13,6 +13,7 @@ Curated encoders + Hydra encoder preset packages (#15).
 - Added Hydra packages under `configs/model/` (`mobilenet_v2`, `dinov3_vit_small`, `convnext_tiny`, `efficientnetv2_s`) setting `model.*` only. `configs/train.yaml` composes MobileNet (library default); `train_multilabel_3head.yaml` composes DINOv3-S (primary recommendation). Shut-off = `model=mobilenet_v2`.
 - Updated `choose-model-architecture` skill for curated vs experimental guidance.
 - Synthetic nbdev tests: allowlist/warn-once, Hydra compose, curated `export_onnx` smoke via `get_model`.
+- Rewrote the curated section in `nbs/09_model.ipynb` as literate **experiment → verify → promote to `#| export`** (alias map, raw `tu-*` forward, allowlist policy, discovery list), then API/Hydra/ONNX tests under the export.
 
 ## 2026-09-27
 

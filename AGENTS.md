@@ -715,7 +715,7 @@ All feature work: literate `nbs/` → test steps → `nbdev-export` (never hand-
 
 ## Learned User Preferences
 
-- Treat notebooks as literate programs (Knuth/nbdev): narrative before code, exposition order over dump-and-export, tests as footnotes beside the functions they cover; implementation work must follow `docs/agents/nbdev-implementation-contract.md` (stepwise cells → tests → `#| export` → `nbdev-export`; never hand-edit `src/`).
+- Treat notebooks as literate programs (Knuth/nbdev): narrative + bullet plan first; then **experiment → verify** each step on synthetic data; only after every verify passes promote to `#| export` (dump-and-export is not literate). Tests sit as footnotes under the export. `/implement` (and TDD/code-review) still apply, but never skip this experiment→verify→function order — see `docs/agents/nbdev-implementation-contract.md`.
 - Prefer plain language over jargon; define unfamiliar terms briefly when first used (e.g. avoid unexplained words like “canonical”).
 - Prefer a wayfinder decision map before writing a design spec; ship phased tickets (umbrella/design first, then one implementable slice); create map/ticket/spec via the repo’s wayfinder flow rather than waiting indefinitely on grill answers.
 - Prefer reviewing draft agent-config files before they are written to disk.
