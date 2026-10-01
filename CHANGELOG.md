@@ -14,6 +14,11 @@ Curated encoders + Hydra encoder preset packages (#15).
 - Updated `choose-model-architecture` skill for curated vs experimental guidance.
 - Synthetic nbdev tests: allowlist/warn-once, Hydra compose, curated `export_onnx` smoke via `get_model`.
 - Rewrote the curated section in `nbs/09_model.ipynb` as literate **experiment → verify → promote to `#| export`** (alias map, raw `tu-*` forward, allowlist policy, discovery list), then API/Hydra/ONNX tests under the export.
+- Fixed ImageNet weight scratch cells in `nbs/09_model.ipynb`: resolve a real file (portable `.pth` or hub `model.safetensors`), never `torch.load` the HF hub directory; save `/tmp/.../mobilenet_v2_encoder.pth` for later air-gapped `get_model(weights_path=...)`.
+- Added `validate_mask_mode` in `nbs/15_hydra_pipeline.ipynb` (strict companion-field checks for stacked / per_class_files).
+- Agent/domain docs: `CONTEXT.md`, `docs/agents/*`, design specs under `docs/superpowers/specs/`; refreshed learned preferences in `AGENTS.md` (literate+implement, finish-one-map, config-driven class names, skill sync).
+- Refined GitHub issue #18 (error-analysis callback): 4-column JPEG posters, train+val, `rank_by` loss|metric (tracker only).
+
 
 ## 2026-09-27
 
