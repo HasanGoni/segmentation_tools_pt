@@ -231,6 +231,7 @@ def main(cfg: DictConfig) -> None:
     mon = cfg.get('monitoring', {})
     act_cfg = mon.get('activation_stats', {})
     pred_cfg = mon.get('pred_overlays', {})
+    ea_cfg = mon.get('error_analysis', {})
     hist_range = act_cfg.get('hist_range', [0, 10])
     callbacks = build_default_callbacks(
         checkpoint_dir=str(checkpoint_dir),
@@ -245,6 +246,13 @@ def main(cfg: DictConfig) -> None:
         pred_every=int(pred_cfg.get('every', 1)),
         pred_max_val_batches=int(pred_cfg.get('max_val_batches', 3)),
         pred_jpeg_quality=int(pred_cfg.get('jpeg_quality', 90)),
+        error_analysis=bool(ea_cfg.get('enabled', False)),
+        ea_top_k=int(ea_cfg.get('top_k', 12)),
+        ea_rank_by=str(ea_cfg.get('rank_by', 'loss')),
+        ea_splits=tuple(ea_cfg.get('splits', ['train', 'val'])),
+        ea_alpha=float(ea_cfg.get('alpha', 0.1)),
+        ea_jpeg_quality=int(ea_cfg.get('jpeg_quality', 90)),
+        ea_per_class=bool(ea_cfg.get('per_class', True)),
         task=task,
         class_names=mask_cfg['class_names'],
     )

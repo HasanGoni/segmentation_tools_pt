@@ -9,7 +9,7 @@ __all__ = ['SMP_ARCHITECTURES', 'CURATED_ENCODER_ALIASES', 'CURATED_TU_ENCODERS'
            'get_model', 'download_encoder_weights', 'get_param_groups', 'freeze_encoder', 'unfreeze_encoder',
            'Dinov3ReassembleEncoder', 'resolve_encoder_name']
 
-# %% ../../nbs/09_model.ipynb #530035c0
+# %% ../../nbs/09_model.ipynb #e66bbb79
 from typing import List, Optional, Set
 import warnings
 
@@ -17,10 +17,10 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/09_model.ipynb #92b6675d
+# %% ../../nbs/09_model.ipynb #c6c7694d
 import segmentation_models_pytorch as smp
 
-# %% ../../nbs/09_model.ipynb #8eb03ac1
+# %% ../../nbs/09_model.ipynb #4d56fb08
 SMP_ARCHITECTURES = {
     'unet': smp.Unet,
     'unetplusplus': smp.UnetPlusPlus,
@@ -134,7 +134,7 @@ def get_model(
     return model
 
 
-# %% ../../nbs/09_model.ipynb #dbd4fdb6
+# %% ../../nbs/09_model.ipynb #e841b3fd
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name  (e.g. 'resnet34', 'efficientnet-b0')
     save_path: str,      # local .pth path to write   (e.g. '/data/weights/resnet34.pth')
@@ -166,7 +166,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #7442a7b1
+# %% ../../nbs/09_model.ipynb #ab5b0228
 def get_param_groups(
     model: nn.Module,        # an smp model (or any model; falls back to one group if no .encoder)
     encoder_lr: float = 1e-4,  # LR for the pretrained encoder
@@ -193,11 +193,12 @@ def unfreeze_encoder(model: nn.Module) -> None:
     for p in model.encoder.parameters():
         p.requires_grad = True
 
-# %% ../../nbs/09_model.ipynb #b203cf73
+# %% ../../nbs/09_model.ipynb #0c688666
 import timm
 from segmentation_models_pytorch.encoders._base import EncoderMixin
 
 
+# %% ../../nbs/09_model.ipynb #800618a1
 class _Reassemble(nn.Module):
     "Project a ViT token feature map to `out_ch` channels, then resize to the target stride."
     def __init__(self, in_ch: int, out_ch: int, scale: float):
@@ -214,6 +215,8 @@ class _Reassemble(nn.Module):
         return self.resize(self.proj(x))
 
 
+
+# %% ../../nbs/09_model.ipynb #6f113d4a
 class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
     """DINOv3 ViT backbone + DPT-style reassemble, exposed as an smp `EncoderMixin`
     so it can be used as `get_model(arch='dinov3_vit_small', architecture='unet', ...)`.
@@ -277,6 +280,8 @@ class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
         return [x, stride2, stride4, stride8, stride16, stride32]
 
 
+
+# %% ../../nbs/09_model.ipynb #51aa9d54
 def _register_dinov3_encoders() -> None:
     "Register the DINOv3 encoders into smp so `list_smp_encoders()` and `get_model()` see them."
     for name, model_name in [
@@ -292,7 +297,7 @@ def _register_dinov3_encoders() -> None:
 _register_dinov3_encoders()
 
 
-# %% ../../nbs/09_model.ipynb #c4c3b42b
+# %% ../../nbs/09_model.ipynb #2d4759f6
 CURATED_ENCODER_ALIASES = {
     'convnext_tiny': 'tu-convnext_tiny',
     'efficientnetv2_s': 'tu-tf_efficientnetv2_s',
@@ -328,6 +333,7 @@ def _validate_encoder_name(encoder_name: str) -> None:
     )
 
 
+# %% ../../nbs/09_model.ipynb #ee26363e
 def list_smp_encoders() -> List[str]:
     """Encoder names for discovery: SMP registry + DINOv3 + curated aliases / `tu-*`.
 
@@ -340,6 +346,8 @@ def list_smp_encoders() -> List[str]:
     return sorted(names)
 
 
+
+# %% ../../nbs/09_model.ipynb #9604a20a
 def get_model(
     arch: str = 'mobilenet_v2',   # encoder name — alias kept for Hydra `model.arch`
     in_channels: int = 3,
@@ -391,6 +399,8 @@ def get_model(
     return model
 
 
+
+# %% ../../nbs/09_model.ipynb #6ed7b195
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name or curated alias
     save_path: str,      # local .pth path to write

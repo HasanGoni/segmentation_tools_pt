@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-02
+
+Freeze-forever training (`freeze_epochs: -1`, #16, from spec in #14).
+
+- `train()` (`nbs/10_train.ipynb`) now freezes the encoder whenever `freeze_epochs != 0`: `0` = no freeze (unchanged), `N > 0` = warm-up then unfreeze at epoch `N` (unchanged), `-1` = encoder frozen for the entire run — only the decoder and segmentation head train. The unfreeze condition (`freeze_epochs > 0 and epoch == freeze_epochs`) never fires for `-1` since epochs start at 0, so freeze-forever needs no extra branch.
+- Notebook tests on a synthetic encoder/decoder/head model track per-epoch `requires_grad` at the first training batch (batch-level, because `on_epoch_begin` fires before the epoch's unfreeze): `-1` → frozen every epoch, `0` → never frozen, `2` → frozen epochs 0–1, unfrozen at epoch 2.
+- Config comments (`configs/train.yaml`, `train_example.yaml`, `train_multilabel_3head.yaml`), `docs/TRAINING_CLI.md` encoder-freeze note, `AGENTS.md`, and the `configure-training-schedule` skill now document the three-way semantics.
+
+Post-training error analysis callback (#18, from spec in #14 / decision in #9).
+
+- Added `ErrorAnalysisCallback` (`nbs/10_train.ipynb`): fires `on_train_end`, ranks the worst samples per split and writes 4-column JPEG posters under `checkpoints/error_analysis/` — image | GT overlay (α from config, default 0.1) | pred overlay | difference overlay (FN green / FP red / overlap magenta) — plus a small `top_ranked.json` (`sample_id`, `split`, `score`, `rank_by`, optional `class`). Default **off**; existing runs unchanged.
+- Added ranking helpers in `nbs/12_visualize.ipynb`: `rank_samples` (per-sample worst-first records; `rank_by: loss` highest-first, `iou|dice|recall|precision` lowest-first via `SegMetrics` on single samples), `rank_samples_per_class` (multilabel per-head ranking; loss ranking slices the class channel and scores it with a binary copy of the criterion), and `save_error_poster` (top-k 4-column poster; multilabel per-channel rendering with class legend, multiclass one-hot columns).
+- Multilabel `per_class: true` writes one poster per class head (`{split}_top{k}_{class}.jpg`); no combined poster.
+- Wired via `build_default_callbacks(..., error_analysis=..., ea_top_k=..., ea_rank_by=..., ea_splits=..., ea_alpha=..., ea_jpeg_quality=..., ea_per_class=...)` and `monitoring.error_analysis` in `configs/train.yaml` / `train_example.yaml` / `scripts/train.py` (explicit kwargs only, same pattern as activation stats / pred overlays).
+- Notebook tests on synthetic data: binary train+val posters + worst-first JSON + default-off preserved; multilabel per-class posters ranked per head. Full suite clean for `10_train.ipynb` / `12_visualize.ipynb`.
+- Updated `AGENTS.md` monitoring table, `training-monitoring-callbacks` and `segmentation-error-analysis` skills.
+
 ## 2026-10-01
 
 Curated encoders + Hydra encoder preset packages (#15).

@@ -17,7 +17,7 @@ and compute.
 | `train.epochs` | Total epochs (default 100). Align with `loss.phases` boundaries |
 | `train.batch_size` | Fit to GPU memory; lower if OOM |
 | `train.encoder_lr` / `train.decoder_lr` | Encoder lower (`1e-4`) than decoder (`1e-3`) — pretrained backbone |
-| `train.freeze_epochs` | Freeze encoder for N warmup epochs (default 5), then unfreeze |
+| `train.freeze_epochs` | `0` = no freeze (default `5` = warm-up); `N > 0` unfreezes at epoch `N`; `-1` = encoder frozen forever (decoder + head only) |
 | `train.crop_size` | Model-view crop; `<= patch.patch_size` in patch mode (see choose-tiling-strategy) |
 | `train.use_amp` | Mixed precision; keep `true` on GPU |
 | `train.save_every` | Periodic checkpoint cadence (`periodic_epNNN.pth`) |

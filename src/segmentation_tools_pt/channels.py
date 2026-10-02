@@ -8,13 +8,13 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/channels.html.md"""
 __all__ = ['ChannelOp', 'CHANNEL_OPS', 'DEFAULT_CHANNELS', 'linear_diff', 'product', 'abs_diff', 'tophat', 'stack_channels',
            'build_image']
 
-# %% ../../nbs/01_channels.ipynb #2b90be86
+# %% ../../nbs/01_channels.ipynb #8813a98d
 from typing import Callable, Dict, List, Sequence
 
 import cv2
 import numpy as np
 
-# %% ../../nbs/01_channels.ipynb #c7f52cd8
+# %% ../../nbs/01_channels.ipynb #8df89583
 def linear_diff(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Signed difference `b - a` rescaled into `[0, 255]` (128 == no change).
 
@@ -37,7 +37,7 @@ def tophat(x: np.ndarray, k: int = 21) -> np.ndarray:
     kern = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
     return cv2.morphologyEx(x, cv2.MORPH_TOPHAT, kern)
 
-# %% ../../nbs/01_channels.ipynb #76cb55c9
+# %% ../../nbs/01_channels.ipynb #1e500c24
 # An op maps the list of source images -> one single-channel uint8 array.
 ChannelOp = Callable[[Sequence[np.ndarray]], np.ndarray]
 
@@ -53,7 +53,7 @@ CHANNEL_OPS: Dict[str, ChannelOp] = {
 # Default 3-channel input: the two raw captures plus their product.
 DEFAULT_CHANNELS: List[str] = ['ch0', 'ch1', 'product']
 
-# %% ../../nbs/01_channels.ipynb #1dd989ad
+# %% ../../nbs/01_channels.ipynb #455d914c
 def stack_channels(
     images: Sequence[np.ndarray],  # source single-channel images, same HxW
     ops: Sequence[ChannelOp],      # ops producing each output channel

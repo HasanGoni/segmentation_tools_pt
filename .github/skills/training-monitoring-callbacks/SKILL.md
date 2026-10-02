@@ -16,14 +16,19 @@ Two built-in callbacks are enabled by default via the `monitoring:` section, and
 |---|---|---|
 | `ActivationStatsCallback` | `checkpoints/activation_stats/epochNNN/...png` | fastai-style activation histograms; bright band at bin 0 = dying features |
 | `PredOverlayCallback` | `checkpoints/predictions/epochNNN/val_batchN_{labels,pred,compare}.jpg` | YOLO-style GT vs prediction mosaics each epoch |
+| `ErrorAnalysisCallback` (opt-in) | `checkpoints/error_analysis/{split}_top{k}[_class].jpg` + `top_ranked.json` | post-training worst-sample triage: 4-column posters (image \| GT α=0.1 \| pred \| FN/FP diff), one per split — per class head for multilabel |
 
 ```yaml
 monitoring:
   activation_stats: {enabled: true, every: 1, n_bins: 40, hist_range: [0, 10], max_layers: 6}
   pred_overlays:    {enabled: true, every: 1, max_val_batches: 3, jpeg_quality: 90}
+  error_analysis:   {enabled: false, top_k: 12, rank_by: loss, splits: [train, val], alpha: 0.1, jpeg_quality: 90, per_class: true}
 ```
 
 Disable either with `monitoring.activation_stats.enabled=false` / `monitoring.pred_overlays.enabled=false`.
+`error_analysis` defaults to **off** (existing runs unchanged); set `enabled: true` to get
+worst-sample posters at train end — `rank_by: loss` ranks highest loss first, a metric name
+(`iou`/`dice`/`recall`/`precision`) ranks lowest first.
 
 ## Custom callbacks (from a notebook, not the CLI)
 
@@ -50,7 +55,8 @@ history = train(..., callbacks=[EarlyStopping(patience=10)])
 ## What this skill emits
 
 - The `monitoring:` block for `configs/train.yaml`, and (for custom hooks) a notebook snippet — the
-  CLI wires only the two default callbacks via `build_default_callbacks()`.
+  CLI wires the monitoring callbacks (including `ErrorAnalysisCallback` when
+  `monitoring.error_analysis.enabled=true`) via `build_default_callbacks()`.
 
 ## Library anchors
 

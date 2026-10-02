@@ -43,7 +43,7 @@ train:
   batch_size: 16
   encoder_lr: 1.0e-4
   decoder_lr: 1.0e-3
-  freeze_epochs: 5
+  freeze_epochs: 5          # 0 = no freeze; N > 0 = unfreeze at epoch N; -1 = encoder frozen forever
   crop_size: 256
   use_amp: true
   save_every: 5

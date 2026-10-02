@@ -234,7 +234,7 @@ skipped with a warning instead of raising an error — all other pretrained laye
 ### `train.py` — training loop
 `train()` — resumable training loop with:
 - AMP (automatic mixed precision)
-- Encoder freeze for `freeze_epochs` then full unfreezing
+- Encoder freeze via `freeze_epochs`: `0` = no freeze, `N > 0` = warm-up then unfreeze at epoch `N`, `-1` = frozen forever (decoder + head only train)
 - Batch-level augmentations (mosaic/mixup/cutmix/copy_paste) in the loop
 - Checkpoint: `latest.pth` every epoch, `best.pth` when `best_metric` improves
 - `history.json` — full epoch-by-epoch loss + metric log
@@ -279,14 +279,15 @@ history = train(..., callbacks=[EarlyStopping(patience=10)])
 
 #### Default monitoring callbacks
 
-`segpt-train` enables two built-in callbacks via the `monitoring:` section in `train.yaml`:
+`segpt-train` enables the monitoring callbacks below via the `monitoring:` section in `train.yaml`. `ErrorAnalysisCallback` is opt-in (default off):
 
 | Callback | Output | Purpose |
 |---|---|---|
 | `ActivationStatsCallback` | `checkpoints/activation_stats/epochNNN/layerXX_*_color_dim.png` | fastai-style activation histograms; bright band at bin 0 → dying features |
 | `PredOverlayCallback` | `checkpoints/predictions/epochNNN/val_batchN_{labels,pred,compare}.jpg` | YOLO-style GT/pred overlay mosaics each epoch |
+| `ErrorAnalysisCallback` (opt-in) | `checkpoints/error_analysis/{split}_top{k}[_class].jpg` + `top_ranked.json` | post-training worst-sample triage at train end: 4-column posters (image \| GT overlay α=0.1 \| pred overlay \| FN/FP difference) ranked by `rank_by: loss` (highest first) or a pixel metric (lowest first); multilabel `per_class: true` writes one poster per class head |
 
-Disable either with `monitoring.activation_stats.enabled=false` or `monitoring.pred_overlays.enabled=false`. Custom callbacks can still be passed from a notebook via `train(..., callbacks=[...])`.
+Disable the first two with `monitoring.activation_stats.enabled=false` or `monitoring.pred_overlays.enabled=false`. Custom callbacks can still be passed from a notebook via `train(..., callbacks=[...])`.
 
 ```yaml
 monitoring:
@@ -301,6 +302,14 @@ monitoring:
     every: 1
     max_val_batches: 3
     jpeg_quality: 90
+  error_analysis:
+    enabled: false          # post-training worst-sample posters; default off
+    top_k: 12
+    rank_by: loss           # loss | iou | dice | recall | precision
+    splits: [train, val]
+    alpha: 0.1
+    jpeg_quality: 90
+    per_class: true
 ```
 
 ### `inference.py` — sliding-window inference
@@ -422,7 +431,7 @@ train:
   batch_size: 16
   encoder_lr: 1.0e-4
   decoder_lr: 1.0e-3
-  freeze_epochs: 5
+  freeze_epochs: 5 # 0 = no freeze; N > 0 = unfreeze at epoch N; -1 = encoder frozen forever
   crop_size: 256
   use_amp: true
   resume: true
@@ -461,6 +470,14 @@ monitoring:
     every: 1
     max_val_batches: 3
     jpeg_quality: 90
+  error_analysis:
+    enabled: false        # post-training worst-sample posters; default off (existing runs unchanged)
+    top_k: 12
+    rank_by: loss
+    splits: [train, val]
+    alpha: 0.1
+    jpeg_quality: 90
+    per_class: true
 
 export:
   onnx: false                      # requires onnx + onnxruntime installed in the venv
@@ -738,3 +755,6 @@ All feature work: literate `nbs/` → test steps → `nbdev-export` (never hand-
 - Shared nbdev implementation contract lives at `docs/agents/nbdev-implementation-contract.md`; wayfinder map for multi-head encoder/robustness is tracked on GitHub Issues.
 - Custom UNet/SMP factory design lives at `docs/superpowers/specs/2026-10-01-custom-unet-smp-factory-design.md` (`model.source: smp | custom_unet`; ASPP/attention are v1 options, default off).
 - Multi-head robustness design lives at `docs/superpowers/specs/2026-10-01-multi-head-robustness-design.md`.
+- DINOv3 pretrained weights load via timm's hub inside `Dinov3ReassembleEncoder.__init__` (`pretrained=True` threaded through the SMP encoder registry); `encoder_weights=None` only switches off smp's state-dict loader, which would fail because the DINOv3 checkpoint has no keys for the added reassemble layers.
+- `ErrorAnalysisCallback` was decided in closed issue #9: fires on `on_train_end`, config under `monitoring.error_analysis`, default off, val top-k JPEG/JSON; issue #18 (`ready-for-agent`) is the implementation ticket — the fuller poster spec (4-column: image | GT overlay α≈0.1 | pred overlay | diff overlay; train+val; rank by loss or metric; configurable top-k) should be folded into #18, not a new wayfinder map.
+- `losses.py` exports a loss stack newer than the Tversky+Dice+boundary combiner: `TverskyFocalLoss`, `ForeGroundAwareLoss`, `hierarchy_regularizer_loss`, `SegLoss`, `resolve_loss_weights`.

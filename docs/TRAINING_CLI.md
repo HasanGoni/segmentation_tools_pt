@@ -232,8 +232,11 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 | `loss` | Tversky/Dice/boundary weights + **phase schedule** |
 | `metrics` | Threshold, which metric saves `best.pth` |
 | `augment` | Per-image + batch-level augmentations |
+| `monitoring` | Activation stats, pred overlays, opt-in `error_analysis` |
 | `export` | ONNX export after training |
 | `hpc` | GPU job defaults |
+
+**Encoder freeze** (`train.freeze_epochs`): `0` = train the encoder from epoch 0; `N > 0` = decoder warm-up — encoder frozen for epochs `0..N-1`, unfrozen at epoch `N`; `-1` = encoder frozen for the whole run (only decoder + head train — good for DINOv3/ViT encoders or small datasets that overfit a tuned backbone).
 
 ### Loss phases
 
@@ -315,6 +318,10 @@ outputs/2026-06-02/15-30-45/
 │   ├── best.pth
 │   ├── latest.pth
 │   ├── history.json
+│   ├── error_analysis/      # if monitoring.error_analysis.enabled: true
+│   │   ├── train_top12.jpg  # worst samples per split (4-col: image | GT | pred | FN/FP diff)
+│   │   ├── val_top12.jpg    # multilabel: one per class, val_top12_chip.jpg ...
+│   │   └── top_ranked.json  # sample_id, split, score, rank_by, class
 │   └── model.onnx           # if export.onnx: true
 └── segpt-train.log          # if configured
 ```

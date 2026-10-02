@@ -6,9 +6,9 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/train.html.md"""
 
 # %% auto #0
 __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverlayCallback', 'build_default_callbacks',
-           'train_one_epoch', 'validate', 'save_checkpoint', 'load_checkpoint', 'train']
+           'ErrorAnalysisCallback', 'train_one_epoch', 'validate', 'save_checkpoint', 'load_checkpoint', 'train']
 
-# %% ../../nbs/10_train.ipynb #0554c195
+# %% ../../nbs/10_train.ipynb #9ba6e983
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,17 +19,18 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #d69432cc
+# %% ../../nbs/10_train.ipynb #e949582d
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
 from segmentation_tools_pt.metrics import SegMetrics
 from segmentation_tools_pt.model import get_param_groups, freeze_encoder, unfreeze_encoder
 from segmentation_tools_pt.visualize import (
     save_color_dim_png, save_near_zero_png, save_overlay_grid_jpeg, save_multilabel_overlay_grid_jpeg,
+    rank_samples, rank_samples_per_class, save_error_poster,
 )
 
 
-# %% ../../nbs/10_train.ipynb #004ca50b
+# %% ../../nbs/10_train.ipynb #e9c8a6d1
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -58,7 +59,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #79c52985
+# %% ../../nbs/10_train.ipynb #935002d6
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -77,7 +78,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #c163199e
+# %% ../../nbs/10_train.ipynb #ef416636
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -254,6 +255,13 @@ def build_default_callbacks(
     pred_jpeg_quality: int = 90,
     task: str = None,   # 'binary' | 'multiclass' | 'multilabel'; None infers from num_classes
     class_names: Optional[Sequence[str]] = None,  # multilabel legend labels for PredOverlayCallback
+    error_analysis: bool = False,  # post-training worst-sample posters; default off so existing runs are unchanged
+    ea_top_k: int = 12,            # worst samples per split (and per class)
+    ea_rank_by: str = 'loss',      # 'loss' | 'iou' | 'dice' | 'recall' | 'precision'
+    ea_splits: Sequence[str] = ('train', 'val'),
+    ea_alpha: float = 0.1,         # GT / pred overlay transparency
+    ea_jpeg_quality: int = 90,
+    ea_per_class: bool = True,     # multilabel: one poster per class head
 ) -> List[TrainCallback]:
     "Factory for on-by-default training monitoring callbacks."
     cbs: List[TrainCallback] = []
@@ -268,10 +276,95 @@ def build_default_callbacks(
             max_val_batches=pred_max_val_batches, jpeg_quality=pred_jpeg_quality,
             num_classes=num_classes, task=task, class_names=class_names,
         ))
+    if error_analysis:
+        cbs.append(ErrorAnalysisCallback(
+            checkpoint_dir, top_k=ea_top_k, rank_by=ea_rank_by, splits=ea_splits,
+            alpha=ea_alpha, jpeg_quality=ea_jpeg_quality, per_class=ea_per_class,
+            num_classes=num_classes, task=task, class_names=class_names, threshold=threshold,
+        ))
     return cbs
 
 
-# %% ../../nbs/10_train.ipynb #99f97a32
+class ErrorAnalysisCallback(TrainCallback):
+    """Post-training error triage: rank the worst samples per split and save 4-column JPEG posters.
+
+    One row per sample: image | GT overlay (`alpha`) | pred overlay | difference overlay
+    (FN green / FP red / overlap magenta). `rank_by='loss'` ranks highest loss first;
+    pixel metrics (`iou`/`dice`/`recall`/`precision`) rank lowest first. Multilabel with
+    `per_class=True` writes one poster per class head. Outputs under
+    `{checkpoint_dir}/error_analysis/`: `{split}_top{k}.jpg` (+ `_{class}` per class)
+    and `top_ranked.json` (`sample_id`, `split`, `score`, `rank_by`, optional `class`).
+    """
+    order = 30
+
+    def __init__(
+        self,
+        checkpoint_dir: str,
+        top_k: int = 12,               # worst samples per split (and per class)
+        rank_by: str = 'loss',         # 'loss' | 'iou' | 'dice' | 'recall' | 'precision'
+        splits: Sequence[str] = ('train', 'val'),
+        alpha: float = 0.1,            # GT / pred overlay transparency
+        jpeg_quality: int = 90,
+        per_class: bool = True,        # multilabel: one poster per class head
+        num_classes: int = 1,
+        task: str = None,              # 'binary' | 'multiclass' | 'multilabel'; None infers
+        class_names: Optional[Sequence[str]] = None,
+        threshold=0.5,
+    ):
+        self.root = Path(checkpoint_dir) / 'error_analysis'
+        self.top_k = top_k
+        self.rank_by = rank_by
+        self.splits = list(splits)
+        self.alpha = alpha
+        self.jpeg_quality = jpeg_quality
+        self.per_class = per_class
+        self.num_classes = num_classes
+        self.task = task or ('binary' if num_classes == 1 else 'multiclass')
+        self.class_names = list(class_names) if class_names is not None else None
+        self.threshold = threshold
+
+    def _record(self, split: str, rank: int, rec: dict, class_name: Optional[str]) -> dict:
+        r = {'split': split, 'rank': rank, 'sample_id': rec['sample_id'],
+             'score': rec['score'], 'rank_by': self.rank_by}
+        if class_name is not None:
+            r['class'] = class_name
+        return r
+
+    def on_train_end(self, state: TrainState) -> None:
+        criterion = state.criterion
+        if criterion is None:
+            return
+        self.root.mkdir(parents=True, exist_ok=True)
+        loaders = {'train': state.train_loader, 'val': state.val_loader}
+        ranked_all = []
+        for split in self.splits:
+            loader = loaders.get(split)
+            if loader is None:
+                continue
+            ds, model = loader.dataset, state.model
+            if self.per_class and self.task == 'multilabel':
+                for c in range(self.num_classes):
+                    name = self.class_names[c] if self.class_names and c < len(self.class_names) else f'class{c}'
+                    ranked = rank_samples_per_class(model, ds, criterion, state.device, c,
+                                                    rank_by=self.rank_by, threshold=self.threshold)
+                    save_error_poster(
+                        model, ds, ranked, state.device, self.root / f'{split}_top{self.top_k}_{name}.jpg',
+                        rank_by=self.rank_by, k=self.top_k, alpha=self.alpha, threshold=self.threshold,
+                        jpeg_quality=self.jpeg_quality, task='multilabel', class_idx=c,
+                        class_names=self.class_names)
+                    ranked_all += [self._record(split, i, rec, name) for i, rec in enumerate(ranked[:self.top_k])]
+            else:
+                ranked = rank_samples(model, ds, criterion, state.device, rank_by=self.rank_by,
+                                      threshold=self.threshold, task=self.task)
+                save_error_poster(
+                    model, ds, ranked, state.device, self.root / f'{split}_top{self.top_k}.jpg',
+                    rank_by=self.rank_by, k=self.top_k, alpha=self.alpha, threshold=self.threshold,
+                    jpeg_quality=self.jpeg_quality, task=self.task, class_names=self.class_names)
+                ranked_all += [self._record(split, i, rec, None) for i, rec in enumerate(ranked[:self.top_k])]
+        (self.root / 'top_ranked.json').write_text(json.dumps(ranked_all, indent=2))
+
+
+# %% ../../nbs/10_train.ipynb #d90e2c44
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -290,7 +383,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #4c79f279
+# %% ../../nbs/10_train.ipynb #9de178b1
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -344,7 +437,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #441a2f7f
+# %% ../../nbs/10_train.ipynb #50211b64
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -385,7 +478,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #e7adbb71
+# %% ../../nbs/10_train.ipynb #cca29e59
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -410,7 +503,7 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #28223f18
+# %% ../../nbs/10_train.ipynb #b856533b
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
@@ -421,7 +514,7 @@ def train(
     batch_size: int = 16,           # batch size
     encoder_lr: float = 1e-4,       # encoder LR
     decoder_lr: float = 1e-3,       # decoder LR
-    freeze_epochs: int = 0,         # epochs to keep the encoder frozen
+    freeze_epochs: int = 0,         # 0 = no freeze; N > 0 = unfreeze at epoch N; -1 = frozen forever
     crop_size: int = 256,           # crop size
     n_source_channels: int = 2,     # raw channels per sample
     channel_names: Sequence[str] = DEFAULT_CHANNELS,  # model-image assembly
@@ -522,7 +615,7 @@ def train(
             start_epoch, best_score, history = load_checkpoint(str(_resume_path), model, optimizer, scheduler, scaler, device)
         elif resume_from is not None:
             raise FileNotFoundError(f'resume_from checkpoint not found: {_resume_path}')
-    if freeze_epochs > 0:
+    if freeze_epochs != 0:
         freeze_encoder(model)
 
     state = TrainState(
@@ -542,7 +635,7 @@ def train(
         _w = resolve_loss_weights(epoch, _phases)
         criterion.set_weights(*_w)
         if freeze_epochs > 0 and epoch == freeze_epochs:
-            unfreeze_encoder(model)
+            unfreeze_encoder(model)  # -1 never matches (epochs start at 0) -> frozen forever
         tr = train_one_epoch(
             model, train_loader, criterion, optimizer, device, scaler,
             num_classes=num_classes, callbacks=callbacks, state=state,
