@@ -33,6 +33,27 @@ mask = (prob > 0.5)                          # binarize at your operating thresh
   `show_top_losses` in `tutorials/03_inference_and_top_losses.ipynb`.
 - Match `in_channels` / `data_mode` to how the model was trained (see choose-channels).
 
+## Multilabel decode chain (threshold -> class morph -> hierarchy)
+
+For multilabel heads, use the fixed decode order; the optional class-targeted morph
+(issue #19) is config-gated (`postprocess.class_morph`, master switch default **false**)
+and cleans ONE named class channel with opening + min-area — never applied to the loss
+or to raw train metrics:
+
+```python
+from segmentation_tools_pt.hydra_pipeline import resolve_class_morph_cfg
+from segmentation_tools_pt.inference import decode, apply_class_morph, apply_hierarchy
+
+morph_cfg = resolve_class_morph_cfg(cfg, class_names)   # None when disabled -> strict no-op
+masks = decode(prob, threshold=thresholds, task='multilabel')
+if morph_cfg is not None:
+    masks = apply_class_morph(masks, **morph_cfg)        # class_idx / kernel_size / min_area
+masks = apply_hierarchy(masks, pairs=hierarchy_pairs)    # e.g. [(1, 0), (2, 0)] = void/lifted ⊆ chip
+```
+
+`class_name` must exist in `data.class_names` or `resolve_class_morph_cfg` raises a clear
+ValueError; other channels pass through `apply_class_morph` untouched.
+
 ## Library anchors
 
 - `src/segmentation_tools_pt/inference.py` — `predict` (sliding-window + blending).

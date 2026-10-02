@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/dataset.html.md"""
 __all__ = ['SegmentationDataset', 'build_datasets', 'build_dataloaders', 'split_sample_ids', 'DirectDataset',
            'build_direct_datasets', 'build_direct_dataloaders']
 
-# %% ../../nbs/06_dataset.ipynb #197b091e
+# %% ../../nbs/06_dataset.ipynb #85eb2167
 import json
 import random
 from pathlib import Path
@@ -23,7 +23,7 @@ from .channels import build_image, DEFAULT_CHANNELS
 from .masks import binarize
 from .transforms import get_train_transforms, get_val_transforms
 
-# %% ../../nbs/06_dataset.ipynb #98563eb6
+# %% ../../nbs/06_dataset.ipynb #f48cb5ac
 def _decode_stacked_mask(arr: np.ndarray, mask_channels: int) -> np.ndarray:
     "arr: (H,W) or (H,W,>=mask_channels) uint8 from cv2.IMREAD_UNCHANGED. Returns (H,W,mask_channels) float32 {0,1}."
     if arr.ndim == 2:
@@ -42,7 +42,7 @@ def _load_per_class_masks(mask_dir: Path, sid: str, class_names: Sequence[str], 
         chans.append((m > 127).astype(np.float32))
     return np.stack(chans, axis=-1)
 
-# %% ../../nbs/06_dataset.ipynb #16965ac2
+# %% ../../nbs/06_dataset.ipynb #25e5c937
 class SegmentationDataset(Dataset):
     """Loads patch samples produced by `dataset_build`.
 
@@ -160,7 +160,7 @@ class SegmentationDataset(Dataset):
                 out.append(1.0 / (fg + eps))
         return out
 
-# %% ../../nbs/06_dataset.ipynb #14fc22eb
+# %% ../../nbs/06_dataset.ipynb #7d9c64f4
 def _seed_worker(worker_id: int) -> None:
     "Seed NumPy/Python RNGs inside each DataLoader worker from torch's worker seed."
     worker_seed = torch.initial_seed() % (2 ** 32)
@@ -253,7 +253,7 @@ def build_dataloaders(
     )
     return train_loader, val_loader, train_ds, val_ds
 
-# %% ../../nbs/06_dataset.ipynb #50e6ed15
+# %% ../../nbs/06_dataset.ipynb #a6519f5d
 import albumentations as A
 
 from .dataset_build import resolve_channel_paths, resolve_mask_path, split_sources

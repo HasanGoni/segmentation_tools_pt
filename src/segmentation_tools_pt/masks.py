@@ -7,7 +7,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/masks.html.md"""
 # %% auto #0
 __all__ = ['binarize', 'fit_rotated_rects_mask', 'fit_rotated_rects_multiclass', 'one_hot']
 
-# %% ../../nbs/02_masks.ipynb #a4fc6833
+# %% ../../nbs/02_masks.ipynb #314787d4
 import cv2
 import numpy as np
 
@@ -16,7 +16,7 @@ import numpy as np
 # Use this constant everywhere we pass contour coordinate arrays to OpenCV.
 _CV_CONTOUR_DTYPE = np.int32
 
-# %% ../../nbs/02_masks.ipynb #0beac5d1
+# %% ../../nbs/02_masks.ipynb #51017841
 def binarize(
     mask: np.ndarray,    # mask with any positive encoding (1 or 255)
     thresh: int = 127,   # threshold when values are 0/255; ignored for 0/1 masks
@@ -35,7 +35,7 @@ def binarize(
         return (mask > 0).astype(np.uint8)
     return (mask > thresh).astype(np.uint8)
 
-# %% ../../nbs/02_masks.ipynb #2860601f
+# %% ../../nbs/02_masks.ipynb #e1825f73
 def fit_rotated_rects_mask(
     mask: np.ndarray,    # binary {0,1} (or 0/255) mask, any shape
     min_pts: int = 5,    # contours with fewer points are kept as-is
@@ -77,7 +77,7 @@ def fit_rotated_rects_multiclass(
         out[cleaned > 0] = label
     return out
 
-# %% ../../nbs/02_masks.ipynb #27659ac3
+# %% ../../nbs/02_masks.ipynb #c70e9aaf
 def one_hot(
     mask: np.ndarray,   # (H, W) integer labels: 0 = background, 1..K = classes
     num_classes: int,   # K, the number of foreground classes

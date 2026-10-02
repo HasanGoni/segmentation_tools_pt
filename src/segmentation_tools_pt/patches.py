@@ -7,7 +7,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/patches.html.md"""
 # %% auto #0
 __all__ = ['PatchConfig', 'grid_centers', 'crop_patch', 'count_class_pixels', 'extract_patches_from_sample']
 
-# %% ../../nbs/03_patches.ipynb #5e6593d5
+# %% ../../nbs/03_patches.ipynb #25be1c46
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
@@ -17,7 +17,7 @@ import numpy as np
 
 from .masks import binarize, fit_rotated_rects_multiclass
 
-# %% ../../nbs/03_patches.ipynb #ce4c7ccd
+# %% ../../nbs/03_patches.ipynb #c53b999c
 @dataclass
 class PatchConfig:
     "Knobs controlling how full images are cut into patches."
@@ -28,7 +28,7 @@ class PatchConfig:
     max_empty_fraction: float = 0.15  # probability of keeping an empty patch
     seed: int = 42                 # base RNG seed
 
-# %% ../../nbs/03_patches.ipynb #5f7fb937
+# %% ../../nbs/03_patches.ipynb #ebf71fb0
 def grid_centers(
     h: int, w: int,        # image height and width
     patch_size: int,       # patch side length
@@ -47,7 +47,7 @@ def grid_centers(
     if xs[-1] < w - half: xs.append(w - half)
     return [(cy, cx) for cy in ys for cx in xs]
 
-# %% ../../nbs/03_patches.ipynb #95b659f5
+# %% ../../nbs/03_patches.ipynb #7e8087d9
 def crop_patch(
     arr: np.ndarray,       # (H, W) or (H, W, C) array
     cy: int, cx: int,      # patch centre
@@ -63,7 +63,7 @@ def crop_patch(
     y0, x0 = cy - half, cx - half
     return arr[y0:y0 + size, x0:x0 + size]
 
-# %% ../../nbs/03_patches.ipynb #4792fe85
+# %% ../../nbs/03_patches.ipynb #e4fe33a3
 def count_class_pixels(
     mask: np.ndarray,   # (H, W) integer-label mask
     num_classes: int,   # number of foreground classes K
@@ -76,7 +76,7 @@ def count_class_pixels(
     """
     return {c: int((mask == c).sum()) for c in range(1, num_classes + 1)}
 
-# %% ../../nbs/03_patches.ipynb #20005ff3
+# %% ../../nbs/03_patches.ipynb #75702cb4
 def extract_patches_from_sample(
     sample_id: str,                  # unique id for the source image
     channel_paths: Sequence[str],    # paths to the source single-channel images

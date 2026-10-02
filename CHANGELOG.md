@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-02
 
+Class-targeted morph postprocess (#19, from spec in #14).
+
+- Added `apply_class_morph` (`nbs/11_inference.ipynb`): cleans **one named class channel** of a decoded multilabel mask with classical morphology — opening (erode→dilate, outside-image treated as background, so border-touching speckles are removable) followed by connected-component min-area filtering. Other channels pass through untouched; `(C,H,W)` and `(B,C,H,W)`, no input mutation; bad `class_idx`/`kernel_size`/`min_area` raise a clear `ValueError`.
+- Fixed inference decode order: threshold decode (`decode`) → class morph (`apply_class_morph`) → hierarchy (`apply_hierarchy`). The order test pins morph-then-hierarchy by cleaning the *super* channel: a `void` speckle under a removed `chip` speckle must die with it.
+- Inference/eval/production decode **only** — never applied to the training loss or to raw train metrics (those judge the model as-is).
+- Added `resolve_class_morph_cfg` (`nbs/15_hydra_pipeline.ipynb`): maps the config block `postprocess.class_morph.*` (master switch default **false**; `class_name`, `kernel_size: 3`, `min_area: 16`) to `apply_class_morph` args, resolving `class_name` against `data.class_names`. Disabled/missing block → `None` (strict no-op); enabled without a name, no `class_names`, or unknown `class_name` → clear `ValueError`.
+- Config block added to `configs/train.yaml` / `train_example.yaml` / `train_multilabel_3head.yaml` (default off; product recipes may set e.g. `class_name: void`).
+- Documented in `docs/TRAINING_CLI.md` and the `run-inference` skill.
+
 Batch-level augmentations, YOLO-style pick-one (#17, from spec in #14).
 
 - Wire `mosaic` / `mixup` / `cutmix` / `copy_paste` into `train_one_epoch` (`nbs/10_train.ipynb`): applied on the batch after it lands on the device, before forward. `mosaic` = per-sample 2x2 canvas (self + 3 rolled donors) at `(2H, 2W)` with a random crop back to `(H, W)` (no-op when `B < 4`); `mixup` = convex blend with a permuted partner, scalar `lam ~ Beta(32, 32)` (mild blending, masks stay mostly intact); `cutmix` = one random box (image + mask) swapped with a permuted donor; `copy_paste` (`mode: flip`) = paste a horizontally-flipped donor's foreground, masks merge via maximum. Shape-generic over mask layouts `(B,H,W)`, `(B,1,H,W)`, `(B,K,H,W)`; metrics/loss see augmented targets (YOLO convention), validation untouched.

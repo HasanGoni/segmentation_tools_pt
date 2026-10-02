@@ -287,6 +287,36 @@ For **high recall** inspection: `metrics.best_metric: recall` and slightly highe
 visualize every batch-aug type forced on, realistic pick-one sampling over virtual batches, and
 the sample-level Albumentations stack.
 
+### Class-targeted morph postprocess (inference decode only, issue #19)
+
+Multilabel sigmoid decoders can leave tiny speckle false alarms in one class channel.
+`postprocess.class_morph` cleans **one named class** at decode time with classical
+morphology (opening + connected-component min-area) — opt-in, master switch default
+**false**, and never applied to the training loss or to raw train metrics (those must
+judge the model as-is):
+
+```yaml
+postprocess:
+  class_morph:
+    enabled: true
+    class_name: void     # resolved against data.class_names; unknown name fails clearly
+    kernel_size: 3       # opening structuring element side (odd)
+    min_area: 16         # drop connected components smaller than this (pixels)
+```
+
+Fixed decode order at inference/production:
+
+```python
+from segmentation_tools_pt.hydra_pipeline import resolve_class_morph_cfg
+from segmentation_tools_pt.inference import decode, apply_class_morph, apply_hierarchy
+
+morph_cfg = resolve_class_morph_cfg(cfg, class_names)   # None when disabled -> decode unchanged
+masks = decode(probs, threshold=thresholds, task='multilabel')
+if morph_cfg is not None:
+    masks = apply_class_morph(masks, **morph_cfg)        # class_idx/kernel_size/min_area
+masks = apply_hierarchy(masks, pairs=hierarchy_pairs)
+```
+
 ---
 
 ## 6. CLI overrides (Hydra)

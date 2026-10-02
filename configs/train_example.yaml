@@ -95,6 +95,13 @@ augment:
   boundary_blur_sigma: [3, 11]
   boundary_halo_brightness: [0.0, 0.15]
 
+postprocess:                       # inference/eval decode only — never applied to loss or raw train metrics
+  class_morph:                     # class-targeted morph cleanup (issue #19); resolve via resolve_class_morph_cfg
+    enabled: false                 # master switch — false = decode unchanged (strict no-op)
+    class_name: null               # class to clean, e.g. void — resolved against data.class_names; unknown name fails clearly
+    kernel_size: 3                 # opening structuring element side (odd); kills thin speckles
+    min_area: 16                   # drop connected components smaller than this many pixels (1 = keep all)
+
 monitoring:
   activation_stats:
     enabled: true

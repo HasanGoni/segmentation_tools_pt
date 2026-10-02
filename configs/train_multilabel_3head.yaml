@@ -105,6 +105,13 @@ augment:
   boundary_blur_sigma: [3, 11]
   boundary_halo_brightness: [0.0, 0.15]
 
+postprocess:                       # inference/eval decode only — never applied to loss or raw train metrics
+  class_morph:                     # class-targeted morph cleanup (issue #19); product recipe: set class_name to a
+    enabled: false                 #   noisy class, e.g. class_name: void (resolved against data.class_names above)
+    class_name: null
+    kernel_size: 3
+    min_area: 16
+
 monitoring:
   activation_stats:
     enabled: true
