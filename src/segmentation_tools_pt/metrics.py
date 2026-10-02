@@ -7,7 +7,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/metrics.html.md"""
 # %% auto #0
 __all__ = ['SegMetrics', 'object_metrics', 'ObjectMetrics', 'subset_violation_rate', 'hierarchy_diagnostics']
 
-# %% ../../nbs/08_metrics.ipynb #b62f6d7e
+# %% ../../nbs/08_metrics.ipynb #30ffc7b3
 from statistics import mean
 from typing import Dict, List
 
@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 import torch
 
-# %% ../../nbs/08_metrics.ipynb #55da7fc1
+# %% ../../nbs/08_metrics.ipynb #8eb1aeca
 class SegMetrics:
     """Accumulate per-class pixel metrics over batches.
 
@@ -101,7 +101,7 @@ class SegMetrics:
         out['per_class'] = per
         return out
 
-# %% ../../nbs/08_metrics.ipynb #8d34793d
+# %% ../../nbs/08_metrics.ipynb #f0661656
 def object_metrics(
     pred_mask: np.ndarray,        # (H, W) binary prediction
     gt_mask: np.ndarray,          # (H, W) binary ground truth
@@ -149,7 +149,7 @@ class ObjectMetrics:
                 'detection_rate': self.detected / (self.total_gt + 1e-6),
                 'false_alarms': self.false_alarms}
 
-# %% ../../nbs/08_metrics.ipynb #630f8b33
+# %% ../../nbs/08_metrics.ipynb #027da9d0
 def subset_violation_rate(
     sub_mask: np.ndarray,    # (H, W) binary mask of the channel that should be a subset (e.g. void)
     super_mask: np.ndarray,  # (H, W) binary mask of the containing channel (e.g. chip)

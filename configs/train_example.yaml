@@ -82,12 +82,13 @@ augment:
   hsv_v: null
   bgr: 0.0
   erasing: 0.0
-  mosaic: 0.0
-  mixup: 0.05
-  cutmix: 0.0
-  copy_paste: 0.10
-  copy_paste_mode: flip
-  close_mosaic: 0
+  batch:                           # batch-level augs (issue #17): pick-one, at most one type per batch
+    enabled: false                 # master switch — false = training identical to no batch aug
+    mosaic: 0.0                    # per-batch probs (marginal); all 0 = no-op even when enabled
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip          # 'flip' = paste horizontally-mirrored donor foreground
   extra_legacy: false
   boundary_blur: 0.4
   boundary_blur_width: [5, 21]

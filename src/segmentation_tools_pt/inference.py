@@ -7,17 +7,17 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/inference.html.md"""
 # %% auto #0
 __all__ = ['predict', 'decode', 'apply_hierarchy', 'find_operating_threshold']
 
-# %% ../../nbs/11_inference.ipynb #9b040eee
+# %% ../../nbs/11_inference.ipynb #cef27ba0
 from typing import Dict, Optional, Sequence
 
 import numpy as np
 import torch
 
 
-# %% ../../nbs/11_inference.ipynb #0b8113c7
+# %% ../../nbs/11_inference.ipynb #36ba9a97
 from segmentation_tools_pt.metrics import ObjectMetrics
 
-# %% ../../nbs/11_inference.ipynb #cbdfbe03
+# %% ../../nbs/11_inference.ipynb #d0f78bf1
 @torch.no_grad()
 def predict(
     model,                 # trained model returning (B, C, H, W) logits
@@ -48,7 +48,7 @@ def predict(
         preds.append(torch.rot90(pr, -k, dims=[2, 3]))
     return torch.stack(preds).mean(0).squeeze(0)
 
-# %% ../../nbs/11_inference.ipynb #8dab0ebd
+# %% ../../nbs/11_inference.ipynb #1e5a4954
 def decode(
     probs: torch.Tensor,     # (C, H, W) probabilities
     threshold=0.5,            # decision threshold: float (binary/multilabel-shared), or per-channel Sequence[float] for multilabel
@@ -77,7 +77,7 @@ def decode(
         return (probs[0] >= threshold).long()
     return probs.argmax(0)
 
-# %% ../../nbs/11_inference.ipynb #2a61d35c
+# %% ../../nbs/11_inference.ipynb #d127e9bb
 def apply_hierarchy(
     masks: torch.Tensor,  # (C, H, W) or (B, C, H, W) decoded/binary multilabel masks
     pairs,                  # [(sub_idx, super_idx), ...], e.g. [(1, 0), (2, 0)] for (void,chip),(lifted,chip)
@@ -96,7 +96,7 @@ def apply_hierarchy(
             sub.mul_(sup)
     return masks
 
-# %% ../../nbs/11_inference.ipynb #576aa0a1
+# %% ../../nbs/11_inference.ipynb #0a081e2b
 @torch.no_grad()
 def find_operating_threshold(
     model,                          # trained binary model

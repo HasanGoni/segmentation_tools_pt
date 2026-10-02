@@ -170,15 +170,20 @@ Returns patch metadata (position, fg pixel count) for weighted sampling later.
 `AugmentConfig` dataclass maps to Albumentations transforms.
 Six presets are defined in the YAML (`yolo26n/s/m/l/x` and `legacy`), and the
 config exposes knobs for geometric (translate, scale, rotate, shear, perspective),
-color (HSV, BGR swap), erasing (CoarseDropout), and batch-level augmentations
-(mosaic, mixup, cutmix, copy_paste). **Currently these presets and batch-level
-augmentations are config-only placeholders; `scripts/train.py` passes `aug=None`
-to `train()`**, so they are **not** applied. The active training pipeline in
-`transforms.get_train_transforms()` is a fixed geometric + photometric stack
+color (HSV, BGR swap), and erasing (CoarseDropout). **These presets are still
+config-only placeholders; `scripts/train.py` passes `aug=None` to `train()`**, so
+they are **not** applied. **Batch-level augmentations ARE wired** (issue #17):
+`mosaic` / `mixup` / `cutmix` / `copy_paste` live under `augment.batch.*`
+(master switch `enabled`, default **false**; per-type probs default **0**) and run
+in `train_one_epoch` as YOLO-style **pick-one** — at most one type per batch, each
+type firing with exactly its configured probability. Master off or all-zero probs
+is a strict no-op (training identical to before). The active sample-level pipeline
+in `transforms.get_train_transforms()` is a fixed geometric + photometric stack
 (RandomCrop, Affine, GridDistortion, RandomBrightnessContrast, GaussNoise,
-GaussianBlur) plus the config-driven `boundary_blur` and optional `flips`.
-The full preset / batch-aug system would be wired in `nbs/05_transforms.ipynb`
-and the train loop in `nbs/10_train.ipynb`.
+GaussianBlur) plus the config-driven `boundary_blur` and optional `flips` —
+unchanged. The full preset system would be wired in `nbs/05_transforms.ipynb`;
+batch augs live in `nbs/10_train.ipynb` (`apply_batch_augs`) with the Hydra
+resolver `resolve_batch_aug_cfg` in `nbs/15_hydra_pipeline.ipynb`.
 
 ### `dataset.py` — PyTorch datasets and loaders
 
@@ -235,7 +240,7 @@ skipped with a warning instead of raising an error — all other pretrained laye
 `train()` — resumable training loop with:
 - AMP (automatic mixed precision)
 - Encoder freeze via `freeze_epochs`: `0` = no freeze, `N > 0` = warm-up then unfreeze at epoch `N`, `-1` = frozen forever (decoder + head only train)
-- Batch-level augmentations (mosaic/mixup/cutmix/copy_paste) in the loop
+- Batch-level augmentations (mosaic/mixup/cutmix/copy_paste) in the loop — YOLO-style pick-one behind `augment.batch.enabled` (default off; per-type probs default 0; off/zero = strict no-op)
 - Checkpoint: `latest.pth` every epoch, `best.pth` when `best_metric` improves
 - `history.json` — full epoch-by-epoch loss + metric log
 - `resume_from` — explicit checkpoint path to resume from (not just `latest.pth`)
@@ -459,8 +464,13 @@ augment:
   preset: yolo26m
   fliplr: 0.0                      # set 0 for orientation-sensitive X-ray
   flipud: 0.0
-  mixup: 0.05
-  copy_paste: 0.11
+  batch:                           # batch-level augs: YOLO-style pick-one (at most one type per batch)
+    enabled: false                 # master switch; false or all probs 0 = no batch aug at all
+    mosaic: 0.0
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip
 
 monitoring:
   activation_stats:

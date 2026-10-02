@@ -7,11 +7,13 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/train.html.md"""
 # %% auto #0
 __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverlayCallback', 'build_default_callbacks',
            'ErrorAnalysisCallback', 'EncoderDriftCheck', 'train_one_epoch', 'validate', 'save_checkpoint',
-           'load_checkpoint', 'train']
+           'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch', 'apply_mosaic_batch',
+           'apply_copy_paste_batch', 'apply_batch_augs', 'train']
 
-# %% ../../nbs/10_train.ipynb #62dbeab6
+# %% ../../nbs/10_train.ipynb #a89eb2f8
 import hashlib
 import json
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -21,7 +23,7 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #620891aa
+# %% ../../nbs/10_train.ipynb #103b3533
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
 from segmentation_tools_pt.metrics import SegMetrics
@@ -32,7 +34,7 @@ from segmentation_tools_pt.visualize import (
 )
 
 
-# %% ../../nbs/10_train.ipynb #957c24b6
+# %% ../../nbs/10_train.ipynb #3e6c3520
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -61,7 +63,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #41e2a0d3
+# %% ../../nbs/10_train.ipynb #3f0078e4
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -80,7 +82,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #23842745
+# %% ../../nbs/10_train.ipynb #c6acb05a
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -428,7 +430,7 @@ class EncoderDriftCheck(TrainCallback):
         self.before = None
 
 
-# %% ../../nbs/10_train.ipynb #ef946d24
+# %% ../../nbs/10_train.ipynb #d312c9b8
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -447,7 +449,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #ff9f284b
+# %% ../../nbs/10_train.ipynb #4b3a7832
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -461,6 +463,7 @@ def train_one_epoch(
     state: Optional[TrainState] = None,
     task: str = None,                  # 'binary' | 'multiclass' | 'multilabel'; None infers from num_classes
     metrics_threshold=0.5,             # float, or per-channel Sequence[float] for task='multilabel'
+    batch_augs: Optional[dict] = None, # {'mosaic','mixup','cutmix','copy_paste'}: probs; None = off
 ) -> Dict[str, float]:
     """Train for one epoch; return averaged losses and `train_*` metrics."""
     model.train()
@@ -473,6 +476,8 @@ def train_one_epoch(
         _call_callbacks(callbacks, 'on_train_batch_begin', state)
         images = batch['image'].to(device, non_blocking=True)
         targets = batch['mask'].to(device, non_blocking=True)
+        if batch_augs:
+            images, targets, _ = apply_batch_augs(images, targets, batch_augs)
         optimizer.zero_grad(set_to_none=True)
         if scaler is not None:
             with torch.amp.autocast('cuda'):
@@ -501,7 +506,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #bad80cb4
+# %% ../../nbs/10_train.ipynb #50b19c72
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -542,7 +547,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #df3b0304
+# %% ../../nbs/10_train.ipynb #322cbc25
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -567,7 +572,118 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #823454ad
+# %% ../../nbs/10_train.ipynb #6d838212
+_BATCH_AUG_ORDER = ('mosaic', 'mixup', 'cutmix', 'copy_paste')
+
+def _perm_from_rng(rng, B: int, device) -> torch.Tensor:
+    "Batch permutation drawn from the seeded Python `random` instance (keeps runs reproducible)."
+    return torch.as_tensor(rng.sample(range(B), B), device=device)
+
+def pick_batch_aug(
+    probs: dict,   # per-type probabilities, e.g. {'mixup': 0.05, 'mosaic': 0.1}
+    rng=None,      # python-random-like RNG; None = module-level `random`
+) -> Optional[str]:  # one of ('mosaic','mixup','cutmix','copy_paste') or None
+    """YOLO-style pick-one: at most one batch-aug type per batch, each with marginal prob `probs[type]`.
+
+    Example:
+        >>> pick_batch_aug({'mixup': 1.0}, random.Random(0))
+        'mixup'
+    """
+    rng = rng or random
+    cum, u = 0.0, rng.random()
+    for name in _BATCH_AUG_ORDER:
+        cum += float(probs.get(name, 0.0))
+        if u < cum:
+            return name
+    return None
+
+def apply_mixup_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Blend each sample with a permuted partner (image + mask); scalar `lam ~ Beta(32, 32)` = mild blending."""
+    rng = rng or random
+    lam = min(0.999, max(0.001, rng.betavariate(32, 32)))
+    perm = _perm_from_rng(rng, images.shape[0], images.device)
+    images = lam * images + (1 - lam) * images[perm]
+    targets = lam * targets + (1 - lam) * targets[perm]
+    return images, targets
+
+def apply_cutmix_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Swap one random box (image + mask) with a permuted donor sample."""
+    rng = rng or random
+    _, _, H, W = images.shape
+    lam = rng.betavariate(1.0, 1.0)
+    cut_h = max(1, int(H * (1 - lam) ** 0.5)); cut_w = max(1, int(W * (1 - lam) ** 0.5))
+    cy, cx = rng.randrange(H), rng.randrange(W)
+    y0, y1 = max(0, cy - cut_h // 2), min(H, cy - cut_h // 2 + cut_h)
+    x0, x1 = max(0, cx - cut_w // 2), min(W, cx - cut_w // 2 + cut_w)
+    perm = _perm_from_rng(rng, images.shape[0], images.device)
+    donor_img, donor_tg = images[perm], targets[perm]  # advanced indexing -> copies, no aliasing
+    images = images.clone()
+    images[:, :, y0:y1, x0:x1] = donor_img[:, :, y0:y1, x0:x1]
+    targets = targets.clone()
+    targets[..., y0:y1, x0:x1] = donor_tg[..., y0:y1, x0:x1]
+    return images, targets
+
+def apply_mosaic_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Per-sample 2x2 mosaic (self + 3 rolled donors) on a (2H, 2W) canvas, random crop back to (H, W).
+
+    No-op when the batch has fewer than 4 samples.
+    """
+    rng = rng or random
+    B, _, H, W = images.shape
+    if B < 4:
+        return images, targets
+    d1, d2, d3 = images.roll(1, 0), images.roll(2, 0), images.roll(3, 0)
+    m1, m2, m3 = targets.roll(1, 0), targets.roll(2, 0), targets.roll(3, 0)
+    top_i, bot_i = torch.cat([images, d1], dim=-1), torch.cat([d2, d3], dim=-1)
+    top_m, bot_m = torch.cat([targets, m1], dim=-1), torch.cat([m2, m3], dim=-1)
+    canvas_img, canvas_tg = torch.cat([top_i, bot_i], dim=-2), torch.cat([top_m, bot_m], dim=-2)
+    y0, x0 = rng.randrange(0, H + 1), rng.randrange(0, W + 1)
+    return canvas_img[:, :, y0:y0 + H, x0:x0 + W], canvas_tg[..., y0:y0 + H, x0:x0 + W]
+
+def apply_copy_paste_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Paste a horizontally-flipped donor's foreground (image + mask union) into each sample.
+
+    Works for binary `(B,1,H,W)`/`(B,H,W)` and multilabel `(B,K,H,W)` masks; the paste
+    location is any donor foreground pixel, masks merge via maximum.
+    """
+    rng = rng or random
+    perm = _perm_from_rng(rng, images.shape[0], images.device)
+    donor_img = torch.flip(images[perm], dims=[-1])
+    donor_tg = torch.flip(targets[perm], dims=[-1])
+    fg = donor_tg > 0
+    if fg.dim() > 3:            # (B,1,H,W) or (B,K,H,W): reduce channel axis -> (B,1,H,W)
+        paste = fg.amax(dim=1, keepdim=True)
+    else:                        # (B,H,W)
+        paste = fg.unsqueeze(1)
+    images = torch.where(paste, donor_img, images)
+    targets = torch.maximum(targets, donor_tg)
+    return images, targets
+
+_BATCH_AUG_FNS = {
+    'mosaic': apply_mosaic_batch, 'mixup': apply_mixup_batch,
+    'cutmix': apply_cutmix_batch, 'copy_paste': apply_copy_paste_batch,
+}
+
+def apply_batch_augs(
+    images: torch.Tensor, targets: torch.Tensor,
+    batch_augs: Optional[dict],  # {'mosaic','mixup','cutmix','copy_paste'}: probs (extra keys ignored); None = off
+    rng=None,
+):
+    """Apply at most one batch-level augmentation per batch; return `(images, targets, applied_name)`.
+
+    `batch_augs=None` or all-zero probs -> identity with `applied_name=None` (strict no-op).
+    """
+    rng = rng or random
+    if not batch_augs:
+        return images, targets, None
+    name = pick_batch_aug(batch_augs, rng)
+    fn = _BATCH_AUG_FNS.get(name)
+    if fn is None:
+        return images, targets, None
+    images, targets = fn(images, targets, rng=rng)
+    return images, targets, name
+
+# %% ../../nbs/10_train.ipynb #fc454c17
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
@@ -597,6 +713,7 @@ def train(
     best_metric: str = 'iou',       # metric to gate best.pth: iou | dice | recall | precision
     aug=None,                       # AugmentConfig for training augmentations
     boundary_blur: Optional[dict] = None,  # kwargs for BlurBoundaryZone (patch-mode training transform)
+    batch_augs: Optional[dict] = None,     # batch-level aug probs {'mosaic','mixup','cutmix','copy_paste'}; None = off
     num_workers: int = 4,           # DataLoader worker processes
     resume_from: Optional[str] = None,  # explicit checkpoint path to resume from; None = use latest.pth
     seed: Optional[int] = None,     # run seed for reproducible sampling and worker RNGs
@@ -703,7 +820,7 @@ def train(
         tr = train_one_epoch(
             model, train_loader, criterion, optimizer, device, scaler,
             num_classes=num_classes, callbacks=callbacks, state=state,
-            task=task, metrics_threshold=metrics_threshold,
+            task=task, metrics_threshold=metrics_threshold, batch_augs=batch_augs,
         )
         state.train_metrics = tr
         va = validate(

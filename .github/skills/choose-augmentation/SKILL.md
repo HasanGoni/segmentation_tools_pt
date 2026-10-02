@@ -18,11 +18,31 @@ Set the `augment.*` block — and be honest about what the training pipeline cur
 - `flips` — optional h/v flips via the `augment.flips` bool.
 
 **Config-only PLACEHOLDERS — present in `train.yaml` but NOT yet wired** (`scripts/train.py`
-passes `aug=None`): `preset` (`yolo26n/s/m/l/x`), `mosaic`, `mixup`, `cutmix`, `copy_paste`,
-and the per-knob controls `translate`, `scale`, `degrees`, `shear`, `perspective`, `hsv_*`,
+passes `aug=None`): `preset` (`yolo26n/s/m/l/x`) and the per-knob sample-level controls
+`translate`, `scale`, `degrees`, `shear`, `perspective`, `hsv_*`,
 `bgr`, `erasing`. Setting these has **no effect yet** — say so to the user. They would be wired
-in `nbs/05_transforms.ipynb` (an `AugmentConfig` → transform builder) and the batch-level loop in
-`nbs/10_train.ipynb`.
+in `nbs/05_transforms.ipynb` (an `AugmentConfig` → transform builder).
+
+**Batch-level augs ARE wired** (issue #17; `nbs/10_train.ipynb` → `train_one_epoch`): master
+switch `augment.batch.enabled` (default **false**) + per-type probs `mosaic`, `mixup`, `cutmix`,
+`copy_paste` (default **0**) + `copy_paste_mode: flip`. YOLO-style **pick-one** — at most one type
+per batch; each type fires with exactly its configured marginal probability; master off or
+all-zero probs = training identical to no batch aug. Emit, e.g.:
+
+```yaml
+augment:
+  batch:
+    enabled: true
+    mosaic: 0.10     # per-batch marginal probs; keep small (0.05-0.15) for inspection data
+    mixup: 0.05
+    cutmix: 0.0
+    copy_paste: 0.10
+    copy_paste_mode: flip
+```
+
+Notes: batch augs handle binary `(B,1,H,W)`/`(B,H,W)` and multilabel `(B,K,H,W)` masks directly;
+on multiclass integer masks `mixup` blends then truncates labels — prefer `cutmix`/`copy_paste`
+there. All randomness is seeded (`set_seed`) so runs stay reproducible.
 
 ## Decision matrix (for what IS active)
 
@@ -42,4 +62,6 @@ in `nbs/05_transforms.ipynb` (an `AugmentConfig` → transform builder) and the 
 
 - `src/segmentation_tools_pt/transforms.py` — `get_train_transforms`, `get_val_transforms`,
   `BlurBoundaryZone`, `boundary_blur_kwargs_from_cfg`.
-- Source notebook: `nbs/05_transforms.ipynb` (where preset/batch augs would be implemented).
+- Source notebook: `nbs/05_transforms.ipynb` (sample-level preset system), `nbs/10_train.ipynb`
+  (batch augs: `pick_batch_aug`, `apply_batch_augs`), `nbs/15_hydra_pipeline.ipynb`
+  (`resolve_batch_aug_cfg`).

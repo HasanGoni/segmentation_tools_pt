@@ -26,6 +26,7 @@ from segmentation_tools_pt.core import platform_info, set_seed
 from segmentation_tools_pt.dataset_build import discover_samples
 from segmentation_tools_pt.export import export_onnx
 from segmentation_tools_pt.hydra_pipeline import (
+    resolve_batch_aug_cfg,
     resolve_boundary_blur_cfg,
     resolve_deterministic,
     resolve_hierarchy_pairs,
@@ -227,6 +228,12 @@ def main(cfg: DictConfig) -> None:
     )
 
     boundary_blur = resolve_boundary_blur_cfg(cfg)
+    batch_augs = resolve_batch_aug_cfg(cfg)
+    if batch_augs:
+        active = {k: v for k, v in batch_augs.items() if v}
+        print(f'Batch augs (pick-one, at most one per batch): {active}')
+    else:
+        print('Batch augs: off (augment.batch.enabled=false or all probs 0)')
 
     mon = cfg.get('monitoring', {})
     act_cfg = mon.get('activation_stats', {})
@@ -293,6 +300,7 @@ def main(cfg: DictConfig) -> None:
         best_metric=cfg.metrics.best_metric,
         aug=None,
         boundary_blur=boundary_blur,
+        batch_augs=batch_augs,
         num_workers=cfg.train.num_workers,
         seed=run_seed,
         callbacks=callbacks or None,

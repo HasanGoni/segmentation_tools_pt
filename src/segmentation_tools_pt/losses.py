@@ -8,14 +8,14 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/losses.html.md"""
 __all__ = ['probs_and_targets', 'TverskyFocalLoss', 'DiceLoss', 'BoundaryLoss', 'BCELoss', 'ForeGroundAwareLoss',
            'hierarchy_regularizer_loss', 'SegLoss', 'resolve_loss_weights']
 
-# %% ../../nbs/07_losses.ipynb #688189de
+# %% ../../nbs/07_losses.ipynb #cece2247
 from typing import Dict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# %% ../../nbs/07_losses.ipynb #d8b40c0c
+# %% ../../nbs/07_losses.ipynb #9a738f50
 def probs_and_targets(
     logits: torch.Tensor,    # (B, C, H, W) raw logits
     targets: torch.Tensor,   # (B, H, W) labels, or (B, C, H, W) float {0,1} for binary/multilabel, or one-hot
@@ -46,7 +46,7 @@ def probs_and_targets(
     onehot = F.one_hot(targets.long(), c).permute(0, 3, 1, 2).float()
     return probs, onehot
 
-# %% ../../nbs/07_losses.ipynb #25231675
+# %% ../../nbs/07_losses.ipynb #e22c4754
 class TverskyFocalLoss(nn.Module):
     """Per-class Tversky-focal loss for binary, multi-class, or multilabel segmentation.
 
@@ -77,7 +77,7 @@ class TverskyFocalLoss(nn.Module):
         tversky = (tp + self.smooth) / (tp + self.alpha * fn + self.beta * fp + self.smooth)
         return ((1.0 - tversky) ** (1.0 / self.gamma)).mean()
 
-# %% ../../nbs/07_losses.ipynb #cf57b2d6
+# %% ../../nbs/07_losses.ipynb #b725c2f2
 class DiceLoss(nn.Module):
     "Per-class soft Dice loss (binary, multi-class, or multilabel)."
 
@@ -93,7 +93,7 @@ class DiceLoss(nn.Module):
         dice = (2 * inter + self.smooth) / (p.sum(dims) + t.sum(dims) + self.smooth)
         return 1.0 - dice.mean()
 
-# %% ../../nbs/07_losses.ipynb #ca86e3b1
+# %% ../../nbs/07_losses.ipynb #f9e00807
 class BoundaryLoss(nn.Module):
     "Boundary-weighted cross-entropy (binary, multi-class, or multilabel)."
 
@@ -129,7 +129,7 @@ class BoundaryLoss(nn.Module):
         fg = (labels > 0).float().unsqueeze(1)
         return (per_px * self._weight_map(fg)).mean()
 
-# %% ../../nbs/07_losses.ipynb #71126a28
+# %% ../../nbs/07_losses.ipynb #784b5c5c
 class BCELoss(nn.Module):
     """Plain binary cross-entropy for segmentation (binary, multi-class, or multilabel).
 
@@ -158,7 +158,7 @@ class BCELoss(nn.Module):
         return F.cross_entropy(logits, targets.long())
 
 
-# %% ../../nbs/07_losses.ipynb #66ef4b29
+# %% ../../nbs/07_losses.ipynb #cb1208c4
 class ForeGroundAwareLoss:
     
   def __init__(
@@ -202,7 +202,7 @@ class ForeGroundAwareLoss:
     loss = (w*l1).sum() / (w.sum() + 1e-8) # weighted average
     return loss
 
-# %% ../../nbs/07_losses.ipynb #80df9b75
+# %% ../../nbs/07_losses.ipynb #41c40ce6
 def hierarchy_regularizer_loss(
     probs: torch.Tensor,  # (B, C, H, W) sigmoid probabilities (task='multilabel')
     pairs,                 # [(sub_idx, super_idx), ...], e.g. [(1, 0), (2, 0)] for (void,chip),(lifted,chip)
@@ -213,7 +213,7 @@ def hierarchy_regularizer_loss(
     terms = [F.relu(probs[:, s] - probs[:, p]).mean() for s, p in pairs]
     return torch.stack(terms).mean()
 
-# %% ../../nbs/07_losses.ipynb #42b653fa
+# %% ../../nbs/07_losses.ipynb #d7aa28d4
 class SegLoss(nn.Module):
     """Weighted Tversky-focal + Dice + Boundary + BCE + hierarchy loss returning a breakdown dict.
 

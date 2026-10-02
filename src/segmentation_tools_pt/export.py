@@ -7,13 +7,13 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/export.html.md"""
 # %% auto #0
 __all__ = ['export_onnx']
 
-# %% ../../nbs/13_export.ipynb #105d42fa
+# %% ../../nbs/13_export.ipynb #58e0bb6f
 from pathlib import Path
 
 import numpy as np
 import torch
 
-# %% ../../nbs/13_export.ipynb #d6868076
+# %% ../../nbs/13_export.ipynb #9c9b371c
 def export_onnx(
     model,                          # trained model returning logits
     output_path: str,               # destination .onnx path

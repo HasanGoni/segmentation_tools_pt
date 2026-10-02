@@ -70,14 +70,15 @@ augment:
   erasing_ratio_min: 0.3
   erasing_ratio_max: 3.3
   erasing_fill: 0.0
-  mosaic: 0.0
-  mixup: 0.05
-  cutmix: 0.0
-  copy_paste: 0.110
-  copy_paste_mode: flip
-  close_mosaic: 0
+  batch:                           # batch-level augs (issue #17): pick-one, at most one type per batch
+    enabled: false                 # master switch — false = training identical to no batch aug
+    mosaic: 0.0                    # per-batch probs (marginal); all 0 = no-op even when enabled
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip          # 'flip' = paste horizontally-mirrored donor foreground
   extra_legacy: false
-  flips: false
+  flips: false                   # keep false for orientation-sensitive X-ray; true only for symmetric layouts
   boundary_blur: 0.4              # probability; 0 = disabled
   boundary_blur_width: [5, 21]    # morphological edge band (pixels, odd)
   boundary_blur_sigma: [3, 11]    # Gaussian sigma for edge smearing
