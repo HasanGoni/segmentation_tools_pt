@@ -282,6 +282,11 @@ For **high recall** inspection: `metrics.best_metric: recall` and slightly highe
 > directly. On **multiclass** integer-label masks, `mixup` blends then truncates labels back to
 > integers (soft labels become hard) — prefer `cutmix` / `copy_paste` / `mosaic` there.
 
+**See it visually:** [tutorials/04_augmentation_playground.ipynb](../tutorials/04_augmentation_playground.ipynb)
+— point it at your own `IMAGE_PATHS` / `MASK_PATHS` (or run it on its synthetic demo data) to
+visualize every batch-aug type forced on, realistic pick-one sampling over virtual batches, and
+the sample-level Albumentations stack.
+
 ---
 
 ## 6. CLI overrides (Hydra)

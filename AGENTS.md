@@ -124,7 +124,8 @@ segmentation_tools_pt/
 │
 ├── tutorials/
 │   ├── 01_training_walkthrough.ipynb   # Step-by-step: data → patches → train → inspect
-│   └── 02_next_steps.ipynb             # Multi-class, inference, ONNX deployment
+│   ├── 02_next_steps.ipynb             # Multi-class, inference, ONNX deployment
+│   └── 04_augmentation_playground.ipynb # Visualize batch augs (pick-one) + sample-level stack on your own images/masks
 │
 ├── outputs/                    # Hydra run outputs (gitignored); see Section 8
 │

@@ -15,6 +15,7 @@ Batch-level augmentations, YOLO-style pick-one (#17, from spec in #14).
 - Wiring: `resolve_batch_aug_cfg` (`nbs/15_hydra_pipeline.ipynb`, returns `None` when disabled/zero) → `scripts/train.py` passes `batch_augs=` to `train()` and logs the active set; `train()` threads it into `train_one_epoch`.
 - Notebook tests (synthetic): pick-one marginals match configured probs over 20k draws; per-aug pixel/mask semantics (union masks, donor pixels pasted, B<4 mosaic no-op); dispatcher on/off/deterministic-prob-1.0; `train_one_epoch` off==zero equivalence + enabled run finite; `train()` smoke with batch augs.
 - Updated `AGENTS.md`, `docs/TRAINING_CLI.md` (recipe note: keep flips off for orientation-sensitive X-ray; multiclass integer masks — prefer cutmix/copy_paste over mixup), and the `choose-augmentation` skill.
+- Added `tutorials/04_augmentation_playground.ipynb` (linked from `docs/TRAINING_CLI.md`): point it at your own `IMAGE_PATHS` / `MASK_PATHS` (or its synthetic demo data) to visualize every batch-aug type forced on, realistic pick-one sampling over virtual batches, and the sample-level Albumentations stack. Demo-only — no `#| export`, not run by `nbdev-test`.
 
 Encoder drift check callback (#21, from spec in #14).
 
