@@ -6,9 +6,11 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/train.html.md"""
 
 # %% auto #0
 __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverlayCallback', 'build_default_callbacks',
-           'ErrorAnalysisCallback', 'train_one_epoch', 'validate', 'save_checkpoint', 'load_checkpoint', 'train']
+           'ErrorAnalysisCallback', 'EncoderDriftCheck', 'train_one_epoch', 'validate', 'save_checkpoint',
+           'load_checkpoint', 'train']
 
-# %% ../../nbs/10_train.ipynb #9ba6e983
+# %% ../../nbs/10_train.ipynb #62dbeab6
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +21,7 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #e949582d
+# %% ../../nbs/10_train.ipynb #620891aa
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
 from segmentation_tools_pt.metrics import SegMetrics
@@ -30,7 +32,7 @@ from segmentation_tools_pt.visualize import (
 )
 
 
-# %% ../../nbs/10_train.ipynb #e9c8a6d1
+# %% ../../nbs/10_train.ipynb #957c24b6
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -59,7 +61,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #935002d6
+# %% ../../nbs/10_train.ipynb #41e2a0d3
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -78,7 +80,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #ef416636
+# %% ../../nbs/10_train.ipynb #23842745
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -262,6 +264,8 @@ def build_default_callbacks(
     ea_alpha: float = 0.1,         # GT / pred overlay transparency
     ea_jpeg_quality: int = 90,
     ea_per_class: bool = True,     # multilabel: one poster per class head
+    drift_check: bool = False,     # verify encoder weights unchanged after training; default off so existing runs are unchanged
+    drift_expect_frozen: Optional[bool] = None,  # True = raise on drift (freeze-forever); None = caller decides (scripts derive from freeze_epochs)
 ) -> List[TrainCallback]:
     "Factory for on-by-default training monitoring callbacks."
     cbs: List[TrainCallback] = []
@@ -282,6 +286,8 @@ def build_default_callbacks(
             alpha=ea_alpha, jpeg_quality=ea_jpeg_quality, per_class=ea_per_class,
             num_classes=num_classes, task=task, class_names=class_names, threshold=threshold,
         ))
+    if drift_check:
+        cbs.append(EncoderDriftCheck(expect_frozen=bool(drift_expect_frozen)))
     return cbs
 
 
@@ -364,7 +370,65 @@ class ErrorAnalysisCallback(TrainCallback):
         (self.root / 'top_ranked.json').write_text(json.dumps(ranked_all, indent=2))
 
 
-# %% ../../nbs/10_train.ipynb #d90e2c44
+def _sd_digest(sd: Dict[str, torch.Tensor]) -> str:
+    "Stable digest of a state dict: sorted keys + float32 bytes (numpy has no bf16 dtype)."
+    h = hashlib.md5()
+    for k, v in sorted(sd.items()):
+        h.update(k.encode())
+        h.update(v.detach().cpu().contiguous().float().numpy().tobytes())
+    return h.hexdigest()
+
+
+class EncoderDriftCheck(TrainCallback):
+    """Post-training answer to "did the encoder weights change?": digest the encoder
+    state dict at `on_train_begin`, compare at `on_train_end`.
+
+    Bit-identical -> prints a confirmation (the guarantee behind freeze-forever,
+    since AdamW never updates params without grads). Changed -> prints per-layer
+    cosine similarity, worst first. With `expect_frozen=True` a changed encoder
+    raises RuntimeError; otherwise it is a drift report for trainable encoders.
+    """
+    order = 40  # after error analysis (30): the guard verdict is the last word
+
+    def __init__(self, expect_frozen: bool = False, max_report: int = 8):
+        self.expect_frozen, self.max_report = expect_frozen, max_report
+        self.before: Optional[Dict[str, torch.Tensor]] = None
+        self.before_digest: Optional[str] = None
+
+    def on_train_begin(self, state):
+        enc = getattr(state.model, 'encoder', None)
+        if enc is None:
+            print('EncoderDriftCheck: model has no .encoder; nothing to check.')
+            return
+        self.before = {k: v.detach().clone() for k, v in enc.state_dict().items()}
+        self.before_digest = _sd_digest(self.before)
+
+    def on_train_end(self, state):
+        if self.before is None:
+            return
+        enc = state.model.encoder
+        if _sd_digest(enc.state_dict()) == self.before_digest:
+            print('EncoderDriftCheck: encoder weights bit-identical after training.')
+            self.before = None
+            return
+        sims = {}
+        for k, v in enc.state_dict().items():
+            b = self.before.get(k)
+            if b is None or b.numel() != v.numel():
+                continue
+            sims[k] = torch.cosine_similarity(
+                v.detach().flatten().float(), b.flatten().float(), dim=0).item()
+        worst = sorted(sims, key=sims.get)[:self.max_report]
+        print('EncoderDriftCheck: encoder weights CHANGED; worst layers by cosine similarity:')
+        for k in worst:
+            print(f'  {k}: cos={sims[k]:.4f}')
+        if self.expect_frozen:
+            raise RuntimeError('EncoderDriftCheck: encoder drifted although expect_frozen=True '
+                               '(e.g. freeze_epochs: -1) — frozen encoders must be bit-identical.')
+        self.before = None
+
+
+# %% ../../nbs/10_train.ipynb #ef946d24
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -383,7 +447,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #9de178b1
+# %% ../../nbs/10_train.ipynb #ff9f284b
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -437,7 +501,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #50211b64
+# %% ../../nbs/10_train.ipynb #bad80cb4
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -478,7 +542,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #cca29e59
+# %% ../../nbs/10_train.ipynb #df3b0304
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -503,7 +567,7 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #b856533b
+# %% ../../nbs/10_train.ipynb #823454ad
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train

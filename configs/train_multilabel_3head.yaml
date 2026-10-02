@@ -116,6 +116,9 @@ monitoring:
     every: 1
     max_val_batches: 3
     jpeg_quality: 90
+  encoder_drift_check:
+    enabled: true         # DINOv3 recipe: verify the (potentially frozen) encoder did not drift unexpectedly
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1 (report-only unless freeze-forever)
 
 export:
   onnx: true

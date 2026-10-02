@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/transforms.html.md"""
 __all__ = ['compute_dataset_stats', 'BlurBoundaryZone', 'boundary_blur_kwargs_from_cfg', 'get_train_transforms',
            'get_val_transforms', 'unnormalize']
 
-# %% ../../nbs/05_transforms.ipynb #ba0056f9
+# %% ../../nbs/05_transforms.ipynb #1bac33ba
 from typing import Iterable, Mapping, Optional, Sequence, Tuple
 
 import cv2
@@ -19,7 +19,7 @@ from albumentations.pytorch import ToTensorV2
 import torch
 
 
-# %% ../../nbs/05_transforms.ipynb #897b2bc8
+# %% ../../nbs/05_transforms.ipynb #767bfa92
 def compute_dataset_stats(
     images: Iterable[np.ndarray],  # iterable of (H, W, C) uint8 images
 ) -> Tuple[Tuple[float, ...], Tuple[float, ...]]:
@@ -44,7 +44,7 @@ def compute_dataset_stats(
     std = np.sqrt(np.maximum(s2 / n - mean ** 2, 1e-12))
     return tuple(mean.tolist()), tuple(std.tolist())
 
-# %% ../../nbs/05_transforms.ipynb #dad7cc22
+# %% ../../nbs/05_transforms.ipynb #986a397e
 def _odd_kernel(radius: int) -> int:
     k = int(radius) | 1
     return max(k, 3)
@@ -148,7 +148,7 @@ def boundary_blur_kwargs_from_cfg(aug_cfg: Mapping) -> dict:
     )
 
 
-# %% ../../nbs/05_transforms.ipynb #2c40618f
+# %% ../../nbs/05_transforms.ipynb #df717808
 def get_train_transforms(
     crop_size: int = 256,                  # output square crop size
     mean: Sequence[float] = (0., 0., 0.),  # per-channel mean (length == channels)
@@ -188,7 +188,7 @@ def get_val_transforms(
     ])
 
 
-# %% ../../nbs/05_transforms.ipynb #dcd44690
+# %% ../../nbs/05_transforms.ipynb #d35c1ca5
 def unnormalize(
     image: torch.Tensor,                   # (C, H, W) normalized tensor
     mean: Sequence[float] = (0., 0., 0.),  # per-channel mean used in Normalize

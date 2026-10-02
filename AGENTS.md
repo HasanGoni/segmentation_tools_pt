@@ -286,6 +286,7 @@ history = train(..., callbacks=[EarlyStopping(patience=10)])
 | `ActivationStatsCallback` | `checkpoints/activation_stats/epochNNN/layerXX_*_color_dim.png` | fastai-style activation histograms; bright band at bin 0 → dying features |
 | `PredOverlayCallback` | `checkpoints/predictions/epochNNN/val_batchN_{labels,pred,compare}.jpg` | YOLO-style GT/pred overlay mosaics each epoch |
 | `ErrorAnalysisCallback` (opt-in) | `checkpoints/error_analysis/{split}_top{k}[_class].jpg` + `top_ranked.json` | post-training worst-sample triage at train end: 4-column posters (image \| GT overlay α=0.1 \| pred overlay \| FN/FP difference) ranked by `rank_by: loss` (highest first) or a pixel metric (lowest first); multilabel `per_class: true` writes one poster per class head |
+| `EncoderDriftCheck` (opt-in) | stdout verdict at train end (no files) | answers "did the encoder weights change?": bit-identical digest check before/after training; per-layer cosine report on drift; raises when `expect_frozen=true` (derive from `freeze_epochs: -1`) |
 
 Disable the first two with `monitoring.activation_stats.enabled=false` or `monitoring.pred_overlays.enabled=false`. Custom callbacks can still be passed from a notebook via `train(..., callbacks=[...])`.
 
@@ -310,6 +311,9 @@ monitoring:
     alpha: 0.1
     jpeg_quality: 90
     per_class: true
+  encoder_drift_check:
+    enabled: false        # verify encoder weights unchanged after training; default off
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise on drift; false = report only
 ```
 
 ### `inference.py` — sliding-window inference
@@ -478,6 +482,9 @@ monitoring:
     alpha: 0.1
     jpeg_quality: 90
     per_class: true
+  encoder_drift_check:
+    enabled: false        # verify encoder weights unchanged after training; default off
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise on drift; false = report only
 
 export:
   onnx: false                      # requires onnx + onnxruntime installed in the venv
@@ -756,5 +763,6 @@ All feature work: literate `nbs/` → test steps → `nbdev-export` (never hand-
 - Custom UNet/SMP factory design lives at `docs/superpowers/specs/2026-10-01-custom-unet-smp-factory-design.md` (`model.source: smp | custom_unet`; ASPP/attention are v1 options, default off).
 - Multi-head robustness design lives at `docs/superpowers/specs/2026-10-01-multi-head-robustness-design.md`.
 - DINOv3 pretrained weights load via timm's hub inside `Dinov3ReassembleEncoder.__init__` (`pretrained=True` threaded through the SMP encoder registry); `encoder_weights=None` only switches off smp's state-dict loader, which would fail because the DINOv3 checkpoint has no keys for the added reassemble layers.
-- `ErrorAnalysisCallback` was decided in closed issue #9: fires on `on_train_end`, config under `monitoring.error_analysis`, default off, val top-k JPEG/JSON; issue #18 (`ready-for-agent`) is the implementation ticket — the fuller poster spec (4-column: image | GT overlay α≈0.1 | pred overlay | diff overlay; train+val; rank by loss or metric; configurable top-k) should be folded into #18, not a new wayfinder map.
+- `ErrorAnalysisCallback` was decided in closed issue #9: fires on `on_train_end`, config under `monitoring.error_analysis`, default off, val top-k JPEG/JSON; implemented and closed via issue #18 (fuller poster spec folded into it: 4-column image | GT overlay α≈0.1 | pred overlay | diff overlay; train+val; rank by loss or metric; configurable top-k).
 - `losses.py` exports a loss stack newer than the Tversky+Dice+boundary combiner: `TverskyFocalLoss`, `ForeGroundAwareLoss`, `hierarchy_regularizer_loss`, `SegLoss`, `resolve_loss_weights`.
+- Multi-head robustness map #1 progress: #15 (DINOv3 encoders), #18 (`ErrorAnalysisCallback`), and #16 (`freeze_epochs: -1` freeze-forever, commit `793dfbb`) are implemented and closed; active work branch is `feat/dinov3-encoder-decoder`; remaining `ready-for-agent` tickets: #17 (batch-level augmentations), #19 (class-targeted morph postprocess), #20 (FP32 ONNX + batched tile inference).

@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-02
 
+Encoder drift check callback (#21, from spec in #14).
+
+- Added `EncoderDriftCheck` (`nbs/10_train.ipynb`, `TrainCallback` order 40): digests the encoder `state_dict` at `on_train_begin` (sorted keys + float32 bytes) and compares at `on_train_end`. Bit-identical → confirmation print; changed → per-layer cosine similarity report (worst layers first, `max_report` capped). With `expect_frozen=True` a changed encoder raises `RuntimeError` — the deterministic guarantee behind freeze-forever (`freeze_epochs: -1`), since AdamW never updates params without grads. Models without `.encoder` are a no-op. Note: activation histograms are *not* a frozen-ness check — they shift because augmentation changes inputs, not because weights moved.
+- Wired via `build_default_callbacks(..., drift_check=..., drift_expect_frozen=...)` and `monitoring.encoder_drift_check` (`enabled`, `expect_frozen: null` = derive from `train.freeze_epochs == -1`) in `configs/train.yaml` / `train_example.yaml` / `train_multilabel_3head.yaml` (enabled there for the DINOv3 recipe) / `scripts/train.py`. Default **off**; existing runs unchanged.
+- Notebook tests on synthetic encoder/decoder/head data: freeze-forever run passes the guard, drifted run reports and raises under `expect_frozen`, no-`.encoder` no-op, wiring via `build_default_callbacks`. Updated `AGENTS.md` monitoring table and the `training-monitoring-callbacks` skill.
+
 Freeze-forever training (`freeze_epochs: -1`, #16, from spec in #14).
 
 - `train()` (`nbs/10_train.ipynb`) now freezes the encoder whenever `freeze_epochs != 0`: `0` = no freeze (unchanged), `N > 0` = warm-up then unfreeze at epoch `N` (unchanged), `-1` = encoder frozen for the entire run — only the decoder and segmentation head train. The unfreeze condition (`freeze_epochs > 0 and epoch == freeze_epochs`) never fires for `-1` since epochs start at 0, so freeze-forever needs no extra branch.

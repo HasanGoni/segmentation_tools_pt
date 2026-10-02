@@ -103,6 +103,9 @@ monitoring:
     alpha: 0.1            # GT / pred overlay transparency
     jpeg_quality: 90
     per_class: true       # multilabel: one poster per class head
+  encoder_drift_check:
+    enabled: false        # verify encoder weights unchanged after training; set true for freeze-forever (freeze_epochs: -1) DINOv3 runs
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise if drifted; false = report only
 
 export:
   onnx: false

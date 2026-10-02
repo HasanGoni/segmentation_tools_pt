@@ -114,6 +114,9 @@ monitoring:
     alpha: 0.1
     jpeg_quality: 90
     per_class: true
+  encoder_drift_check:
+    enabled: false        # verify encoder weights unchanged after training
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise if drifted; false = report only
 
 export:
   onnx: true

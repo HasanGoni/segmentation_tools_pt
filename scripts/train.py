@@ -232,6 +232,7 @@ def main(cfg: DictConfig) -> None:
     act_cfg = mon.get('activation_stats', {})
     pred_cfg = mon.get('pred_overlays', {})
     ea_cfg = mon.get('error_analysis', {})
+    drift_cfg = mon.get('encoder_drift_check', {})
     hist_range = act_cfg.get('hist_range', [0, 10])
     callbacks = build_default_callbacks(
         checkpoint_dir=str(checkpoint_dir),
@@ -253,6 +254,11 @@ def main(cfg: DictConfig) -> None:
         ea_alpha=float(ea_cfg.get('alpha', 0.1)),
         ea_jpeg_quality=int(ea_cfg.get('jpeg_quality', 90)),
         ea_per_class=bool(ea_cfg.get('per_class', True)),
+        drift_check=bool(drift_cfg.get('enabled', False)),
+        drift_expect_frozen=(
+            bool(drift_cfg.expect_frozen) if drift_cfg.get('expect_frozen') is not None
+            else cfg.train.freeze_epochs == -1  # derive: freeze-forever runs must stay bit-identical
+        ),
         task=task,
         class_names=mask_cfg['class_names'],
     )
