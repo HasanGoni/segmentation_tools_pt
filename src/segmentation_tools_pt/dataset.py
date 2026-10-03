@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/dataset.html.md"""
 __all__ = ['SegmentationDataset', 'build_datasets', 'build_dataloaders', 'split_sample_ids', 'DirectDataset',
            'build_direct_datasets', 'build_direct_dataloaders']
 
-# %% ../../nbs/06_dataset.ipynb #85eb2167
+# %% ../../nbs/06_dataset.ipynb #35552ffd
 import json
 import random
 from pathlib import Path
@@ -23,7 +23,7 @@ from .channels import build_image, DEFAULT_CHANNELS
 from .masks import binarize
 from .transforms import get_train_transforms, get_val_transforms
 
-# %% ../../nbs/06_dataset.ipynb #f48cb5ac
+# %% ../../nbs/06_dataset.ipynb #34ad744d
 def _decode_stacked_mask(arr: np.ndarray, mask_channels: int) -> np.ndarray:
     "arr: (H,W) or (H,W,>=mask_channels) uint8 from cv2.IMREAD_UNCHANGED. Returns (H,W,mask_channels) float32 {0,1}."
     if arr.ndim == 2:
@@ -42,7 +42,7 @@ def _load_per_class_masks(mask_dir: Path, sid: str, class_names: Sequence[str], 
         chans.append((m > 127).astype(np.float32))
     return np.stack(chans, axis=-1)
 
-# %% ../../nbs/06_dataset.ipynb #25e5c937
+# %% ../../nbs/06_dataset.ipynb #055cbf75
 class SegmentationDataset(Dataset):
     """Loads patch samples produced by `dataset_build`.
 
@@ -160,7 +160,7 @@ class SegmentationDataset(Dataset):
                 out.append(1.0 / (fg + eps))
         return out
 
-# %% ../../nbs/06_dataset.ipynb #7d9c64f4
+# %% ../../nbs/06_dataset.ipynb #c7d6caf0
 def _seed_worker(worker_id: int) -> None:
     "Seed NumPy/Python RNGs inside each DataLoader worker from torch's worker seed."
     worker_seed = torch.initial_seed() % (2 ** 32)
@@ -175,6 +175,11 @@ def _make_loader_generator(seed: Optional[int]):
     generator = torch.Generator()
     generator.manual_seed(int(seed))
     return generator
+
+
+def _prefetch_kwargs(num_workers: int, prefetch_factor: Optional[int] = None) -> dict:
+    "DataLoader kwargs enabling prefetch_factor only when workers exist (torch errors otherwise)."
+    return {'prefetch_factor': prefetch_factor} if num_workers > 0 and prefetch_factor is not None else {}
 
 
 def build_datasets(
@@ -203,6 +208,7 @@ def build_dataloaders(
     root: str,                  # dataset root
     batch_size: int = 16,       # samples per batch
     num_workers: int = 4,       # dataloader workers (use 2 on network shares)
+    prefetch_factor: Optional[int] = None,  # batches kept in flight per worker (needs num_workers > 0); None = torch default
     crop_size: int = 256,       # crop size
     num_classes: int = 1,       # 1 = binary, >1 = multi-class (mask_mode='single' only)
     n_source_channels: int = 2, # raw channels per sample
@@ -234,6 +240,7 @@ def build_dataloaders(
         batch_size=batch_size,
         sampler=sampler,
         num_workers=num_workers,
+        **_prefetch_kwargs(num_workers, prefetch_factor),
         pin_memory=pin_memory,
         drop_last=True,
         persistent_workers=(num_workers > 0),
@@ -245,6 +252,7 @@ def build_dataloaders(
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
+        **_prefetch_kwargs(num_workers, prefetch_factor),
         pin_memory=pin_memory,
         drop_last=False,
         persistent_workers=(num_workers > 0),
@@ -253,7 +261,7 @@ def build_dataloaders(
     )
     return train_loader, val_loader, train_ds, val_ds
 
-# %% ../../nbs/06_dataset.ipynb #a6519f5d
+# %% ../../nbs/06_dataset.ipynb #5c9959ed
 import albumentations as A
 
 from .dataset_build import resolve_channel_paths, resolve_mask_path, split_sources
@@ -367,7 +375,9 @@ def build_direct_datasets(
 
 
 def build_direct_dataloaders(
-    raw_dir, train_ids, val_ids, batch_size=16, num_workers=4, crop_size=256,
+    raw_dir, train_ids, val_ids, batch_size=16, num_workers=4,
+    prefetch_factor: Optional[int] = None,  # batches kept in flight per worker (needs num_workers > 0); None = torch default
+    crop_size=256,
     num_classes=1, n_source_channels=1, channel_names=DEFAULT_CHANNELS,
     mask_suffix='_mask', exts='.png', fit_rects=False, mean=None, std=None,
     aug=None, flips=False, boundary_blur=None, pin_memory=True, seed: Optional[int] = None,
@@ -384,6 +394,7 @@ def build_direct_dataloaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
+        **_prefetch_kwargs(num_workers, prefetch_factor),
         pin_memory=pin_memory,
         drop_last=True,
         persistent_workers=(num_workers > 0),
@@ -395,6 +406,7 @@ def build_direct_dataloaders(
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
+        **_prefetch_kwargs(num_workers, prefetch_factor),
         pin_memory=pin_memory,
         drop_last=False,
         persistent_workers=(num_workers > 0),

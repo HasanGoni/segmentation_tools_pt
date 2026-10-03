@@ -10,7 +10,7 @@ __all__ = ['DEFAULT_MULTILABEL_COLORS', 'show_pred', 'overlay_gt_only', 'overlay
            'show_top_losses', 'overlay_multilabel', 'show_pred_multilabel', 'save_multilabel_overlay_grid_jpeg',
            'rank_samples', 'rank_samples_per_class', 'save_error_poster']
 
-# %% ../../nbs/12_visualize.ipynb #eaae6d2f
+# %% ../../nbs/12_visualize.ipynb #fc812cda
 import math
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -24,7 +24,7 @@ from .inference import predict, decode
 from .losses import SegLoss
 from .metrics import SegMetrics
 
-# %% ../../nbs/12_visualize.ipynb #6ecf6ec8
+# %% ../../nbs/12_visualize.ipynb #6d82cc9c
 def _to_numpy(x):
     "Detach a tensor to numpy; pass arrays through."
     return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else np.asarray(x)
@@ -58,7 +58,7 @@ def show_pred(
                        mpatches.Patch(color=(1, 0, 1), label='Both')], loc='upper right', fontsize=7)
     return ax
 
-# %% ../../nbs/12_visualize.ipynb #686b784f
+# %% ../../nbs/12_visualize.ipynb #5806a48f
 def _disp_channel(image):
     "First channel of a (C,H,W) or (H,W) image for grayscale display."
     image = _to_numpy(image)
@@ -154,7 +154,7 @@ def save_overlay_grid_jpeg(
     fig.savefig(path, format='jpeg', dpi=100, pil_kwargs={'quality': jpeg_quality}, bbox_inches='tight')
     plt.close(fig)
 
-# %% ../../nbs/12_visualize.ipynb #2c52b600
+# %% ../../nbs/12_visualize.ipynb #7f082f3c
 def _grid(n: int, cols: int) -> Tuple[int, int]:
     "Rows/cols for `n` panels."
     return math.ceil(n / cols), cols
@@ -179,7 +179,7 @@ def sanity_check(dataset, n: int = 8):
     plt.tight_layout()
     return fig
 
-# %% ../../nbs/12_visualize.ipynb #c0c60054
+# %% ../../nbs/12_visualize.ipynb #b8114e2b
 def show_batch(model, dataset, device, n: int = 8, threshold: float = 0.5):
     "Overlay predictions for `n` random samples."
     idxs = np.random.choice(len(dataset), min(n, len(dataset)), replace=False)
@@ -225,7 +225,7 @@ def show_top_losses(model, dataset, criterion, device, k: int = 8, threshold: fl
     plt.tight_layout()
     return fig
 
-# %% ../../nbs/12_visualize.ipynb #131d0cfa
+# %% ../../nbs/12_visualize.ipynb #29a1e992
 DEFAULT_MULTILABEL_COLORS = [
     (0.9, 0.1, 0.1), (0.1, 0.8, 0.1), (0.2, 0.4, 0.95),
     (0.9, 0.8, 0.1), (0.8, 0.1, 0.9), (0.1, 0.8, 0.8),
@@ -316,7 +316,7 @@ def save_multilabel_overlay_grid_jpeg(
     fig.savefig(path, format='jpeg', dpi=100, pil_kwargs={'quality': jpeg_quality}, bbox_inches='tight')
     plt.close(fig)
 
-# %% ../../nbs/12_visualize.ipynb #a8af87bf
+# %% ../../nbs/12_visualize.ipynb #e96048a4
 _METRIC_KEYS = ('iou', 'dice', 'recall', 'precision')
 
 def _check_rank_by(rank_by: str) -> str:
@@ -394,7 +394,7 @@ def rank_samples_per_class(
     records.sort(key=lambda r: r['score'], reverse=rank_by == 'loss')
     return records
 
-# %% ../../nbs/12_visualize.ipynb #5aaed778
+# %% ../../nbs/12_visualize.ipynb #4d320da2
 _FN_COLOR, _FP_COLOR, _TP_COLOR = (0.0, 0.8, 0.0), (0.8, 0.0, 0.0), (1.0, 0.0, 1.0)
 
 def _flat_overlay(image, fg, color, alpha: float, ax):

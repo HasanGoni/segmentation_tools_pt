@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-03
+
+FP32 ONNX export + batched tile inference + loader prefetch (#20, from spec in #14).
+
+- Added `predict_tiled` / `tile_starts` (`nbs/11_inference.ipynb`): batched sliding-window inference for large images — tiles forward in chunks of `inference_batch_size` and stitch with `stitching.gaussian_weight_map`. Clamped tile starts cover every pixel (last tile shifted back; images smaller than one tile are zero-padded up); batch size is a pure memory ↔ throughput knob — `inference_batch_size=1` is bit-identical to any larger value (test pins it). Activation semantics match `predict` (sigmoid binary/multilabel, softmax multiclass; `activate=False` logits passthrough); bad `overlap`/`inference_batch_size` raise clear `ValueError`s.
+- Added `resolve_inference_cfg` (`nbs/15_hydra_pipeline.ipynb`): maps the `inference.*` config block (`tile_size: 256`, `overlap: 32`, `inference_batch_size: 8`, `prefetch_factor: null`) to `predict_tiled` knobs, validated before the GPU is touched; missing block → defaults. `prefetch_factor` targets loader-driven tiled-inference consumers — `predict_tiled` batches in-process and ignores it.
+- FP32 ONNX regression smoke (`nbs/13_export.ipynb`): curated encoders (`convnext_tiny`, `efficientnetv2_s`) build via `get_model(pretrained=False)` and export through `export_onnx` (dynamic batch, opset 18, `task`/`class_names` metadata) with ONNX Runtime output verified against PyTorch. FP32 only — no INT8, no TensorRT. DINOv3 FP32 export at `in_channels=1`, multilabel 3-head was validated separately (timm-hub weights pull is heavier than a smoke).
+- DataLoader prefetch knob (`nbs/06_dataset.ipynb` + `nbs/10_train.ipynb`): `prefetch_factor` threads through `build_dataloaders` / `build_direct_dataloaders` and `train()`'s internal patch-mode loaders via guarded `_prefetch_kwargs` (torch rejects the kwarg when `num_workers == 0`, so it is inert without workers). Config: `train.prefetch_factor` (default null = torch's 2 batches/worker), wired through `scripts/train.py`.
+- Config blocks `inference.*` + `train.prefetch_factor` added to `configs/train.yaml` / `train_example.yaml` / `train_multilabel_3head.yaml`; documented in `docs/TRAINING_CLI.md` (production tiled-inference section) and the `run-inference` skill.
+
 ## 2026-10-02
 
 Class-targeted morph postprocess (#19, from spec in #14).

@@ -317,6 +317,38 @@ if morph_cfg is not None:
 masks = apply_hierarchy(masks, pairs=hierarchy_pairs)
 ```
 
+### Production tiled-inference knobs (`inference.*`, issue #20)
+
+Full inspection images don't fit one forward pass. `predict_tiled` tiles them, forwards
+tiles in chunks of `inference_batch_size`, and stitches with Gaussian-weighted blending —
+batch size trades GPU memory against throughput only (batch 1 is bit-identical to batch
+999), never accuracy. Knobs live in config so production needs no code change:
+
+```yaml
+inference:
+  tile_size: 256            # tile side fed to the model
+  overlap: 32               # adjacent-tile overlap; Gaussian blending stitches tiles back
+  inference_batch_size: 8   # tiles per forward — raise for throughput, lower if OOM
+  prefetch_factor: null     # loader-driven tiled inference only; predict_tiled ignores it
+```
+
+```python
+from segmentation_tools_pt.hydra_pipeline import resolve_inference_cfg
+from segmentation_tools_pt.inference import predict_tiled
+
+knobs = resolve_inference_cfg(cfg)
+prob = predict_tiled(model, image, device, **knobs)   # (C, H, W) probabilities
+```
+
+The same `prefetch_factor` knob exists for training loaders (`train.prefetch_factor`,
+threaded into `train()`'s patch-mode loaders; inert unless `num_workers > 0`) and for
+`build_dataloaders` / `build_direct_dataloaders` — it keeps batches in flight per worker
+so the GPU doesn't idle between batches on network-share patch caches.
+
+ONNX export stays **FP32 only** (`export.onnx`, opset 18, dynamic batch axis,
+runtime-verified); curated encoders (`convnext_tiny`, `efficientnetv2_s`,
+`dinov3_vit_small`, …) export through the standard `get_model` path. No INT8, no TensorRT.
+
 ---
 
 ## 6. CLI overrides (Hydra)

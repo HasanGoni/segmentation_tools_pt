@@ -242,6 +242,7 @@ skipped with a warning instead of raising an error — all other pretrained laye
 - AMP (automatic mixed precision)
 - Encoder freeze via `freeze_epochs`: `0` = no freeze, `N > 0` = warm-up then unfreeze at epoch `N`, `-1` = frozen forever (decoder + head only train)
 - Batch-level augmentations (mosaic/mixup/cutmix/copy_paste) in the loop — YOLO-style pick-one behind `augment.batch.enabled` (default off; per-type probs default 0; off/zero = strict no-op)
+- DataLoader prefetch via `prefetch_factor` (threaded into the internal patch-mode loaders from `train.prefetch_factor`; inert unless `num_workers > 0`)
 - Checkpoint: `latest.pth` every epoch, `best.pth` when `best_metric` improves
 - `history.json` — full epoch-by-epoch loss + metric log
 - `resume_from` — explicit checkpoint path to resume from (not just `latest.pth`)
@@ -326,6 +327,12 @@ monitoring:
 `predict_full_image()` — tiles a large image into overlapping patches, runs the model,
 and stitches predictions back with Gaussian-weighted blending.
 Handles arbitrary image sizes without retraining.
+`predict_tiled()` — batched sliding-window inference: tiles forward in chunks of
+`inference_batch_size` (memory ↔ throughput knob; batch 1 is bit-identical to any
+larger batch), clamped tile starts cover every pixel including images smaller than
+one tile, same activation semantics as `predict`. Production knobs (`tile_size`,
+`overlap`, `inference_batch_size`, `prefetch_factor`) resolve from the `inference:`
+config block via `hydra_pipeline.resolve_inference_cfg`.
 
 ### `visualize.py` — visualization helpers
 `overlay_mask()`, `plot_history()` — for notebooks and post-training inspection.
@@ -448,6 +455,7 @@ train:
   resume_from: null                # null = latest.pth; set to specific .pth to resume from there
   device: cuda
   num_workers: 4                   # DataLoader workers; needs TMPDIR=/tmp on HPC (set in job script)
+  prefetch_factor: null            # batches in flight per worker (needs num_workers > 0); null = torch default
 
 loss:                              # Tversky+Dice+boundary, phase-scheduled
   alpha: 0.7                       # FN weight — higher = fewer misses
@@ -501,6 +509,12 @@ export:
   onnx: false                      # requires onnx + onnxruntime installed in the venv
   opset: 18
   verify: true
+
+inference:                         # production tiled-inference knobs (predict_tiled)
+  tile_size: 256                   # tile side fed to the model
+  overlap: 32                      # adjacent-tile overlap; Gaussian-weighted stitching
+  inference_batch_size: 8          # tiles per forward — memory ↔ throughput only
+  prefetch_factor: null            # loader-driven tiled inference only
 
 hpc:                               # used only by segpt-submit
   queue: gpu                       # gpu | gpu_compute | normal
@@ -762,6 +776,7 @@ All feature work: literate `nbs/` → test steps → `nbdev-export` (never hand-
 - Prefer independently toggleable batch-level augmentations in config (mixup, cutmix, mosaic, copy_paste, alone or combined).
 - Prefer default ImageNet encoder weights with freeze warmup, plus a config path to keep the encoder frozen for the full run.
 - When changing library behavior in notebooks, also update related agent skills so non-power-users can ask the agent and get working scripts.
+- Make new features discoverable: reference them from the GitHub issue, user docs (e.g. `docs/TRAINING_CLI.md`), and an interactive tutorial notebook when hands-on testing applies (e.g. augmentation playground in `tutorials/`).
 
 ## Learned Workspace Facts
 
@@ -776,4 +791,4 @@ All feature work: literate `nbs/` → test steps → `nbdev-export` (never hand-
 - DINOv3 pretrained weights load via timm's hub inside `Dinov3ReassembleEncoder.__init__` (`pretrained=True` threaded through the SMP encoder registry); `encoder_weights=None` only switches off smp's state-dict loader, which would fail because the DINOv3 checkpoint has no keys for the added reassemble layers.
 - `ErrorAnalysisCallback` was decided in closed issue #9: fires on `on_train_end`, config under `monitoring.error_analysis`, default off, val top-k JPEG/JSON; implemented and closed via issue #18 (fuller poster spec folded into it: 4-column image | GT overlay α≈0.1 | pred overlay | diff overlay; train+val; rank by loss or metric; configurable top-k).
 - `losses.py` exports a loss stack newer than the Tversky+Dice+boundary combiner: `TverskyFocalLoss`, `ForeGroundAwareLoss`, `hierarchy_regularizer_loss`, `SegLoss`, `resolve_loss_weights`.
-- Multi-head robustness map #1 progress: #15 (DINOv3 encoders), #18 (`ErrorAnalysisCallback`), #16 (`freeze_epochs: -1` freeze-forever, commit `793dfbb`), and #19 (class-targeted morph postprocess: `inference.apply_class_morph` + `hydra_pipeline.resolve_class_morph_cfg` + `postprocess.class_morph` config, default off) are implemented and closed; active work branch is `feat/dinov3-encoder-decoder`; remaining `ready-for-agent` tickets: #20 (FP32 ONNX + batched tile inference).
+- Multi-head robustness map #1 progress: #15 (DINOv3 encoders), #18 (`ErrorAnalysisCallback`), #16 (`freeze_epochs: -1` freeze-forever, commit `793dfbb`), #17 (batch-level augs: YOLO-style pick-one under `augment.batch.*`, default off; augmentation playground tutorial made canonical and referenced from the issue + `docs/TRAINING_CLI.md`), #21 (`EncoderDriftCheck` at train end: bit-identical digest verdict for frozen runs, per-layer cosine drift report otherwise, raises on drift when `expect_frozen=true`), and #19 (class-targeted morph postprocess: `inference.apply_class_morph` + `hydra_pipeline.resolve_class_morph_cfg` + `postprocess.class_morph` config, default off) are implemented and closed; #20 (FP32 ONNX for curated encoders via `get_model` + `export_onnx` regression smoke; batched tile inference `predict_tiled`/`tile_starts` with `inference.inference_batch_size` — batch-size invariant output; `prefetch_factor` loader knob in `train()`/`build_*_dataloaders` + `hydra_pipeline.resolve_inference_cfg`) is implemented on branch `feat/onnx-batched-tile-inference`; active work branch is `feat/onnx-batched-tile-inference`; `configs/train_multilabel_3head.yaml` is the DINOv3 3-head recipe with `encoder_drift_check` enabled.
