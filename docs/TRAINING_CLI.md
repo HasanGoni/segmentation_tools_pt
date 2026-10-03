@@ -232,8 +232,11 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 | `loss` | Tversky/Dice/boundary weights + **phase schedule** |
 | `metrics` | Threshold, which metric saves `best.pth` |
 | `augment` | Per-image + batch-level augmentations |
+| `monitoring` | Activation stats, pred overlays, opt-in `error_analysis` |
 | `export` | ONNX export after training |
 | `hpc` | GPU job defaults |
+
+**Encoder freeze** (`train.freeze_epochs`): `0` = train the encoder from epoch 0; `N > 0` = decoder warm-up — encoder frozen for epochs `0..N-1`, unfrozen at epoch `N`; `-1` = encoder frozen for the whole run (only decoder + head train — good for DINOv3/ViT encoders or small datasets that overfit a tuned backbone).
 
 ### Loss phases
 
@@ -247,9 +250,15 @@ Use `until_epoch: -1` on the last phase for “until end of training”.
 
 Preset shortcut: `augment.preset: yolo26m` (or `yolo26n/s/l/x`, `legacy`). Override any field; `null` keeps the preset value.
 
-**Batch-level** (applied in the train loop): `mosaic`, `mixup`, `cutmix`, `copy_paste`, `close_mosaic`.
+**Batch-level** (applied in the train loop, YOLO-style **pick-one** — at most one type per batch):
+`augment.batch.*` — master switch `enabled` (default **false**) plus per-type probabilities
+`mosaic`, `mixup`, `cutmix`, `copy_paste` (default **0**) and `copy_paste_mode`. Enabling the
+master switch alone does nothing until you set a prob > 0; master off or all-zero probs reproduces
+"no batch aug" training exactly. Each type fires with exactly its configured probability; types
+never stack in the same batch.
 
-For **orientation-sensitive X-ray** (fixed camera), start conservative:
+For **orientation-sensitive X-ray** (fixed camera), start conservative — keep flips off and batch
+augs off or tiny:
 
 ```yaml
 augment:
@@ -258,14 +267,55 @@ augment:
   flipud: 0.0
   translate: 0.10
   scale: 0.30
-  mosaic: 0.0
-  mixup: 0.05
-  cutmix: 0.0
-  copy_paste: 0.10
-  copy_paste_mode: flip
+  batch:
+    enabled: true
+    mosaic: 0.10
+    mixup: 0.05
+    cutmix: 0.0
+    copy_paste: 0.10
+    copy_paste_mode: flip
 ```
 
 For **high recall** inspection: `metrics.best_metric: recall` and slightly higher `mixup` / `copy_paste` (watch false alarms on real val).
+
+> **Note:** batch augs see binary (`(B,1,H,W)` / `(B,H,W)`) and multilabel (`(B,K,H,W)`) masks
+> directly. On **multiclass** integer-label masks, `mixup` blends then truncates labels back to
+> integers (soft labels become hard) — prefer `cutmix` / `copy_paste` / `mosaic` there.
+
+**See it visually:** [tutorials/04_augmentation_playground.ipynb](../tutorials/04_augmentation_playground.ipynb)
+— point it at your own `IMAGE_PATHS` / `MASK_PATHS` (or run it on its synthetic demo data) to
+visualize every batch-aug type forced on, realistic pick-one sampling over virtual batches, and
+the sample-level Albumentations stack.
+
+### Class-targeted morph postprocess (inference decode only, issue #19)
+
+Multilabel sigmoid decoders can leave tiny speckle false alarms in one class channel.
+`postprocess.class_morph` cleans **one named class** at decode time with classical
+morphology (opening + connected-component min-area) — opt-in, master switch default
+**false**, and never applied to the training loss or to raw train metrics (those must
+judge the model as-is):
+
+```yaml
+postprocess:
+  class_morph:
+    enabled: true
+    class_name: void     # resolved against data.class_names; unknown name fails clearly
+    kernel_size: 3       # opening structuring element side (odd)
+    min_area: 16         # drop connected components smaller than this (pixels)
+```
+
+Fixed decode order at inference/production:
+
+```python
+from segmentation_tools_pt.hydra_pipeline import resolve_class_morph_cfg
+from segmentation_tools_pt.inference import decode, apply_class_morph, apply_hierarchy
+
+morph_cfg = resolve_class_morph_cfg(cfg, class_names)   # None when disabled -> decode unchanged
+masks = decode(probs, threshold=thresholds, task='multilabel')
+if morph_cfg is not None:
+    masks = apply_class_morph(masks, **morph_cfg)        # class_idx/kernel_size/min_area
+masks = apply_hierarchy(masks, pairs=hierarchy_pairs)
+```
 
 ---
 
@@ -281,7 +331,7 @@ segpt-train /path/to/train.yaml \
   data.patch_dir=/path/to/dataset/patches \
   train.epochs=80 \
   metrics.best_metric=recall \
-  augment.mixup=0.10
+  augment.batch.enabled=true augment.batch.mixup=0.10
 ```
 
 Force rebuild patches during training (or use `segpt-build` instead):
@@ -315,6 +365,10 @@ outputs/2026-06-02/15-30-45/
 │   ├── best.pth
 │   ├── latest.pth
 │   ├── history.json
+│   ├── error_analysis/      # if monitoring.error_analysis.enabled: true
+│   │   ├── train_top12.jpg  # worst samples per split (4-col: image | GT | pred | FN/FP diff)
+│   │   ├── val_top12.jpg    # multilabel: one per class, val_top12_chip.jpg ...
+│   │   └── top_ranked.json  # sample_id, split, score, rank_by, class
 │   └── model.onnx           # if export.onnx: true
 └── segpt-train.log          # if configured
 ```
@@ -352,7 +406,14 @@ model:
   weights_path: /data/weights/resnet34.pth
 ```
 
----
+Or switch a curated encoder package (sets `model.*` only; shut-off = MobileNet):
+
+```bash
+segpt-train configs/train.yaml model=dinov3_vit_small
+segpt-train configs/train_multilabel_3head.yaml model=mobilenet_v2   # shut-off
+```
+
+Packages live under `configs/model/` (`mobilenet_v2`, `dinov3_vit_small`, `convnext_tiny`, `efficientnetv2_s`).
 
 ## 9. Use from another project folder
 
@@ -373,7 +434,7 @@ No need to copy the library into your project — only the config and data paths
 | All patches `fg_pixels=0` | Mask encoding: must be `{0,255}` or `{0,1}`; see tutorial Step 1b |
 | Empty cleaned mask (rotated rect) | Sync latest `masks.py` (`int32` for OpenCV contours on Linux) |
 | `segpt-train` not found | Re-run `uv sync` and make sure `.venv` is activated |
-| Mixup seems inactive | `mixup` is skipped for `num_classes > 1` (integer masks) |
+| Mixup seems inactive | Batch augs are off unless `augment.batch.enabled=true` **and** the type prob > 0; on multiclass integer masks `mixup` blends then truncates labels (prefer `cutmix`/`copy_paste` there) |
 | Direct mode OOM | Switch to `patch_mode: true` or reduce `train.crop_size` / `train.batch_size` |
 
 Interactive walkthrough with synthetic data: [tutorials/01_training_walkthrough.ipynb](../tutorials/01_training_walkthrough.ipynb).

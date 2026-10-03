@@ -2560,6 +2560,7 @@ dependencies = [
     { name = "nbdev" },
     { name = "opencv-python-headless" },
     { name = "segmentation-models-pytorch" },
+    { name = "timm" },
     { name = "torch" },
     { name = "torchvision" },
 ]
@@ -2577,6 +2578,7 @@ requires-dist = [
     { name = "nbdev", specifier = ">=3.0.17" },
     { name = "opencv-python-headless" },
     { name = "segmentation-models-pytorch", specifier = ">=0.5.0" },
+    { name = "timm", specifier = ">=1.0.28" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchvision", specifier = ">=0.25.0" },
 ]

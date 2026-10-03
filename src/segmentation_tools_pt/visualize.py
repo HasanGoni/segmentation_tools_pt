@@ -7,9 +7,10 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/visualize.html.md"""
 # %% auto #0
 __all__ = ['DEFAULT_MULTILABEL_COLORS', 'show_pred', 'overlay_gt_only', 'overlay_pred_only', 'save_color_dim_png',
            'save_near_zero_png', 'save_overlay_grid_jpeg', 'sanity_check', 'show_batch', 'compute_patch_losses',
-           'show_top_losses', 'overlay_multilabel', 'show_pred_multilabel', 'save_multilabel_overlay_grid_jpeg']
+           'show_top_losses', 'overlay_multilabel', 'show_pred_multilabel', 'save_multilabel_overlay_grid_jpeg',
+           'rank_samples', 'rank_samples_per_class', 'save_error_poster']
 
-# %% ../../nbs/12_visualize.ipynb #c7b1283e
+# %% ../../nbs/12_visualize.ipynb #eaae6d2f
 import math
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -20,8 +21,10 @@ import numpy as np
 import torch
 
 from .inference import predict, decode
+from .losses import SegLoss
+from .metrics import SegMetrics
 
-# %% ../../nbs/12_visualize.ipynb #f5e800c0
+# %% ../../nbs/12_visualize.ipynb #6ecf6ec8
 def _to_numpy(x):
     "Detach a tensor to numpy; pass arrays through."
     return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else np.asarray(x)
@@ -55,7 +58,7 @@ def show_pred(
                        mpatches.Patch(color=(1, 0, 1), label='Both')], loc='upper right', fontsize=7)
     return ax
 
-# %% ../../nbs/12_visualize.ipynb #c12da249
+# %% ../../nbs/12_visualize.ipynb #686b784f
 def _disp_channel(image):
     "First channel of a (C,H,W) or (H,W) image for grayscale display."
     image = _to_numpy(image)
@@ -151,7 +154,7 @@ def save_overlay_grid_jpeg(
     fig.savefig(path, format='jpeg', dpi=100, pil_kwargs={'quality': jpeg_quality}, bbox_inches='tight')
     plt.close(fig)
 
-# %% ../../nbs/12_visualize.ipynb #9107c480
+# %% ../../nbs/12_visualize.ipynb #2c52b600
 def _grid(n: int, cols: int) -> Tuple[int, int]:
     "Rows/cols for `n` panels."
     return math.ceil(n / cols), cols
@@ -176,7 +179,7 @@ def sanity_check(dataset, n: int = 8):
     plt.tight_layout()
     return fig
 
-# %% ../../nbs/12_visualize.ipynb #be58811f
+# %% ../../nbs/12_visualize.ipynb #c0c60054
 def show_batch(model, dataset, device, n: int = 8, threshold: float = 0.5):
     "Overlay predictions for `n` random samples."
     idxs = np.random.choice(len(dataset), min(n, len(dataset)), replace=False)
@@ -222,7 +225,7 @@ def show_top_losses(model, dataset, criterion, device, k: int = 8, threshold: fl
     plt.tight_layout()
     return fig
 
-# %% ../../nbs/12_visualize.ipynb #d8dd67e7
+# %% ../../nbs/12_visualize.ipynb #131d0cfa
 DEFAULT_MULTILABEL_COLORS = [
     (0.9, 0.1, 0.1), (0.1, 0.8, 0.1), (0.2, 0.4, 0.95),
     (0.9, 0.8, 0.1), (0.8, 0.1, 0.9), (0.1, 0.8, 0.8),
@@ -310,5 +313,171 @@ def save_multilabel_overlay_grid_jpeg(
         for a in axes[r, c * 2:c * 2 + 2]:
             a.set_visible(False)
     plt.tight_layout()
+    fig.savefig(path, format='jpeg', dpi=100, pil_kwargs={'quality': jpeg_quality}, bbox_inches='tight')
+    plt.close(fig)
+
+# %% ../../nbs/12_visualize.ipynb #a8af87bf
+_METRIC_KEYS = ('iou', 'dice', 'recall', 'precision')
+
+def _check_rank_by(rank_by: str) -> str:
+    "Reject unknown rank_by values early."
+    assert rank_by == 'loss' or rank_by in _METRIC_KEYS, \
+        f"rank_by must be 'loss' or one of {_METRIC_KEYS}, got {rank_by!r}"
+    return rank_by
+
+def _class_criterion(crit: SegLoss, class_idx: int) -> SegLoss:
+    "Binary copy of a multilabel criterion, used to score ONE class channel independently."
+    tv = crit.tversky
+    return SegLoss(
+        alpha=tv.alpha, beta=tv.beta, gamma=tv.gamma,
+        w_tversky=crit.w_tversky, w_dice=crit.w_dice, w_boundary=crit.w_boundary,
+        w_bce=crit.w_bce, task='binary',
+    )
+
+@torch.no_grad()
+def rank_samples(
+    model,                    # model returning (B, C, H, W) logits
+    dataset,                  # Dataset of {'image', 'mask', 'sample_id'}
+    criterion: SegLoss,       # loss returning a breakdown dict (rank_by='loss')
+    device: torch.device,
+    rank_by: str = 'loss',    # 'loss' (highest first) | 'iou' | 'dice' | 'recall' | 'precision' (lowest first)
+    n: Optional[int] = None,  # rank at most n samples; None = whole dataset
+    threshold=0.5,            # sigmoid threshold for metric ranking
+    task: str = None,         # 'binary' | 'multiclass' | 'multilabel'; must be 'multilabel' for multilabel datasets
+) -> List[dict]:
+    "Per-sample ranking, worst-first, as `{'idx', 'sample_id', 'score'}` records."
+    _check_rank_by(rank_by)
+    model.eval()
+    n = n or len(dataset)
+    records = []
+    for idx in range(min(n, len(dataset))):
+        s = dataset[idx]
+        logits = model(s['image'].unsqueeze(0).to(device))
+        if rank_by == 'loss':
+            score = float(criterion(logits, s['mask'].unsqueeze(0).to(device))['loss'])
+        else:
+            m = SegMetrics(num_classes=logits.shape[1], task=task, threshold=threshold)
+            m.update(logits, s['mask'].unsqueeze(0).to(device))
+            score = m.compute()[rank_by]
+        records.append({'idx': idx, 'sample_id': str(s['sample_id']), 'score': score})
+    records.sort(key=lambda r: r['score'], reverse=rank_by == 'loss')
+    return records
+
+@torch.no_grad()
+def rank_samples_per_class(
+    model, dataset, criterion: SegLoss, device,
+    class_idx: int,           # which multilabel class head to score
+    rank_by: str = 'loss',
+    n: Optional[int] = None,
+    threshold=0.5,
+) -> List[dict]:
+    "Per-sample ranking for ONE multilabel class head, worst-first. Loss ranking slices the class channel and scores it with a binary copy of the criterion."
+    _check_rank_by(rank_by)
+    model.eval()
+    n = n or len(dataset)
+    crit_c = _class_criterion(criterion, class_idx) if rank_by == 'loss' else None
+    records = []
+    for idx in range(min(n, len(dataset))):
+        s = dataset[idx]
+        logits = model(s['image'].unsqueeze(0).to(device))
+        t = s['mask'].unsqueeze(0).to(device)
+        if t.dim() == logits.dim() - 1:
+            t = t.unsqueeze(1)
+        ch_logits, ch_t = logits[:, class_idx:class_idx + 1], t[:, class_idx:class_idx + 1]
+        if rank_by == 'loss':
+            score = float(crit_c(ch_logits, ch_t)['loss'])
+        else:
+            m = SegMetrics(num_classes=1, task='binary', threshold=threshold)
+            m.update(ch_logits, ch_t)
+            score = m.compute()[rank_by]
+        records.append({'idx': idx, 'sample_id': str(s['sample_id']), 'score': score})
+    records.sort(key=lambda r: r['score'], reverse=rank_by == 'loss')
+    return records
+
+# %% ../../nbs/12_visualize.ipynb #5aaed778
+_FN_COLOR, _FP_COLOR, _TP_COLOR = (0.0, 0.8, 0.0), (0.8, 0.0, 0.0), (1.0, 0.0, 1.0)
+
+def _flat_overlay(image, fg, color, alpha: float, ax):
+    "Single-color foreground overlay on the display channel, at a configurable alpha."
+    fg = _to_numpy(fg).squeeze() > 0.5
+    overlay = np.zeros((*fg.shape, 3), np.float32)
+    overlay[fg] = color
+    ax.imshow(_disp_channel(image), cmap='gray'); ax.imshow(overlay, alpha=alpha); ax.set_axis_off()
+    return ax
+
+def _diff_overlay(image, gt_fg, pr_fg, alpha: float, ax):
+    "FN green / FP red / overlap magenta disagreement overlay."
+    gt_fg = _to_numpy(gt_fg).squeeze() > 0.5
+    pr_fg = _to_numpy(pr_fg).squeeze() > 0.5
+    overlay = np.zeros((*gt_fg.shape, 3), np.float32)
+    overlay[gt_fg & ~pr_fg] = _FN_COLOR
+    overlay[pr_fg & ~gt_fg] = _FP_COLOR
+    overlay[gt_fg & pr_fg] = _TP_COLOR
+    ax.imshow(_disp_channel(image), cmap='gray'); ax.imshow(overlay, alpha=alpha); ax.set_axis_off()
+    return ax
+
+def _poster_masks(logits: torch.Tensor, mask, task, class_idx, threshold) -> tuple:
+    "GT/pred masks for one poster row: (H, W) binary, or (K, H, W) 0/1 stacks for per-channel rendering."
+    ch = logits.detach().squeeze(0)              # (C, H, W)
+    m = _to_numpy(mask).squeeze()                # (H, W) or (K, H, W)
+    if class_idx is not None:                    # one multilabel class head -> binary panels
+        gt = (m[class_idx] > 0.5).astype(int) if m.ndim == 3 else (m > 0.5).astype(int)
+        pr = (torch.sigmoid(ch[class_idx]) >= threshold).numpy().astype(int)
+        return gt, pr
+    if task == 'multilabel':
+        gt = (m > 0.5).astype(int) if m.ndim == 3 else \
+            np.eye(int(m.max()) + 1, dtype=int)[m.astype(int)].transpose(2, 0, 1)
+        pr = (torch.sigmoid(ch) >= threshold).numpy().astype(int)
+        return gt, pr
+    if ch.shape[0] == 1:                         # binary
+        return (m > 0.5).astype(int), (torch.sigmoid(ch[0]) >= threshold).numpy().astype(int)
+    eye = np.eye(ch.shape[0], dtype=int)         # multiclass: label maps -> one-hot stacks
+    return eye[m.astype(int)].transpose(2, 0, 1), eye[ch.argmax(0).numpy()].transpose(2, 0, 1)
+
+@torch.no_grad()
+def save_error_poster(
+    model, dataset, ranked, device, path,
+    rank_by: str = 'score',     # shown in row titles (e.g. 'loss' or 'iou')
+    k: int = 12,                # rows: the top-k ranked samples
+    alpha: float = 0.1,         # GT / pred overlay transparency
+    threshold: float = 0.5,     # sigmoid threshold for prediction masks
+    jpeg_quality: int = 90,
+    task: str = None,           # 'binary' | 'multiclass' | 'multilabel'; None infers from channel count
+    class_idx: int = None,      # render ONE multilabel class head (binary panels)
+    class_names=None,           # K legend labels for per-channel rendering
+) -> None:
+    """Save a 4-column error poster (image | GT overlay | pred overlay | difference) for the top-k ranked samples.
+
+    One row per sample; the difference column colors FN green, FP red, overlap magenta.
+    Per-channel rows (multilabel without class_idx) get a class legend.
+    """
+    top = ranked[:k]
+    if not top:
+        return
+    model.eval()
+    fig, axes = plt.subplots(len(top), 4, figsize=(4 * 3, len(top) * 3))
+    axes = np.atleast_2d(axes)
+    for i, rec in enumerate(top):
+        ax_img, ax_gt, ax_pr, ax_df = axes[i]
+        s = dataset[rec['idx']]
+        logits = model(s['image'].unsqueeze(0).to(device))
+        gt, pr = _poster_masks(logits, s['mask'], task, class_idx, threshold)
+        ax_img.imshow(_disp_channel(s['image']), cmap='gray'); ax_img.set_axis_off()
+        ax_img.set_title(f"{rec['sample_id']}  {rank_by}={rec['score']:.4g}", fontsize=7)
+        if gt.ndim == 3:
+            overlay_multilabel(s['image'], gt, class_names, alpha=alpha, ax=ax_gt)
+            overlay_multilabel(s['image'], pr, class_names, alpha=alpha, ax=ax_pr)
+        else:
+            _flat_overlay(s['image'], gt, (0.0, 0.8, 0.0), alpha, ax=ax_gt)
+            _flat_overlay(s['image'], pr, (0.8, 0.0, 0.0), alpha, ax=ax_pr)
+        _diff_overlay(s['image'], gt.any(0) if gt.ndim == 3 else gt,
+                      pr.any(0) if pr.ndim == 3 else pr, alpha, ax=ax_df)
+    for j, name in enumerate(['image', 'GT', 'pred', 'diff']):
+        axes[0, j].set_xlabel(name, fontsize=7)
+    fig.legend(handles=[mpatches.Patch(color=_FN_COLOR, label='FN (miss)'),
+                        mpatches.Patch(color=_FP_COLOR, label='FP (false alarm)'),
+                        mpatches.Patch(color=_TP_COLOR, label='TP (overlap)')],
+               loc='lower center', ncol=3, fontsize=7)
+    plt.tight_layout(rect=(0, 0.03, 1, 1))
     fig.savefig(path, format='jpeg', dpi=100, pil_kwargs={'quality': jpeg_quality}, bbox_inches='tight')
     plt.close(fig)

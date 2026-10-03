@@ -1,0 +1,7 @@
+# Library default encoder package (shut-off target).
+# Compose: defaults: [model: mobilenet_v2]  or  CLI: model=mobilenet_v2
+# Sets model.* only — freeze/LR stay on the train/recipe config.
+architecture: unet
+arch: mobilenet_v2
+pretrained: false
+weights_path: /path/to/models/mobilenet_v2.pth

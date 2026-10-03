@@ -8,6 +8,7 @@
 
 defaults:
   - data_patch
+  - model: dinov3_vit_small  # primary recommendation; shut-off with model=mobilenet_v2
   - _self_
 
 data:
@@ -32,12 +33,8 @@ patch:
   seed: 42
   num_workers: 4
 
-model:
-  architecture: unet        # smp segmentation head
-  arch: mobilenet_v2      # smp encoder / backbone
-  in_channels: 1
-  pretrained: true
-  weights_path: /path/to/smp_models/mobilenet_v2.pth
+# model.* from configs/model/dinov3_vit_small.yaml; in_channels from data_patch (1 for single).
+# Throughput alternative: model=convnext_tiny. Shut-off: model=mobilenet_v2.
 
 train:
   num_classes: 3             # K = len(data.class_names); one sigmoid head per class
@@ -46,7 +43,7 @@ train:
   batch_size: 16
   encoder_lr: 1.0e-4
   decoder_lr: 1.0e-3
-  freeze_epochs: 5
+  freeze_epochs: 5          # 0 = no freeze; N > 0 = unfreeze at epoch N; -1 = encoder frozen forever
   crop_size: 256
   use_amp: true
   save_every: 5
@@ -95,17 +92,25 @@ augment:
   hsv_v: null
   bgr: 0.0
   erasing: 0.0
-  mosaic: 0.0
-  mixup: 0.05
-  cutmix: 0.0
-  copy_paste: 0.10
-  copy_paste_mode: flip
-  close_mosaic: 0
+  batch:                           # batch-level augs (issue #17): pick-one, at most one type per batch
+    enabled: false                 # master switch — false = training identical to no batch aug
+    mosaic: 0.0                    # per-batch probs (marginal); all 0 = no-op even when enabled
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip          # 'flip' = paste horizontally-mirrored donor foreground
   extra_legacy: false
   boundary_blur: 0.4
   boundary_blur_width: [5, 21]
   boundary_blur_sigma: [3, 11]
   boundary_halo_brightness: [0.0, 0.15]
+
+postprocess:                       # inference/eval decode only — never applied to loss or raw train metrics
+  class_morph:                     # class-targeted morph cleanup (issue #19); product recipe: set class_name to a
+    enabled: false                 #   noisy class, e.g. class_name: void (resolved against data.class_names above)
+    class_name: null
+    kernel_size: 3
+    min_area: 16
 
 monitoring:
   activation_stats:
@@ -119,6 +124,9 @@ monitoring:
     every: 1
     max_val_batches: 3
     jpeg_quality: 90
+  encoder_drift_check:
+    enabled: true         # DINOv3 recipe: verify the (potentially frozen) encoder did not drift unexpectedly
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1 (report-only unless freeze-forever)
 
 export:
   onnx: true

@@ -49,9 +49,9 @@ The `.py` files in `src/` are generated artifacts.
 
 ```bash
 # After editing any notebook:
-nbdev_export        # regenerate src/ from nbs/
-nbdev_test          # run all in-notebook tests
-nbdev_preview       # local docs preview (Quarto)
+nbdev-export        # regenerate src/ from nbs/
+nbdev-test          # run all in-notebook tests
+nbdev-preview       # local docs preview (Quarto)
 ```
 
 On NFS mounts, verify agent edits landed on disk before export — see `.cursor/skills/nbdev-notebook-verify/SKILL.md`.
@@ -124,7 +124,8 @@ segmentation_tools_pt/
 │
 ├── tutorials/
 │   ├── 01_training_walkthrough.ipynb   # Step-by-step: data → patches → train → inspect
-│   └── 02_next_steps.ipynb             # Multi-class, inference, ONNX deployment
+│   ├── 02_next_steps.ipynb             # Multi-class, inference, ONNX deployment
+│   └── 04_augmentation_playground.ipynb # Visualize batch augs (pick-one) + sample-level stack on your own images/masks
 │
 ├── outputs/                    # Hydra run outputs (gitignored); see Section 8
 │
@@ -170,15 +171,20 @@ Returns patch metadata (position, fg pixel count) for weighted sampling later.
 `AugmentConfig` dataclass maps to Albumentations transforms.
 Six presets are defined in the YAML (`yolo26n/s/m/l/x` and `legacy`), and the
 config exposes knobs for geometric (translate, scale, rotate, shear, perspective),
-color (HSV, BGR swap), erasing (CoarseDropout), and batch-level augmentations
-(mosaic, mixup, cutmix, copy_paste). **Currently these presets and batch-level
-augmentations are config-only placeholders; `scripts/train.py` passes `aug=None`
-to `train()`**, so they are **not** applied. The active training pipeline in
-`transforms.get_train_transforms()` is a fixed geometric + photometric stack
+color (HSV, BGR swap), and erasing (CoarseDropout). **These presets are still
+config-only placeholders; `scripts/train.py` passes `aug=None` to `train()`**, so
+they are **not** applied. **Batch-level augmentations ARE wired** (issue #17):
+`mosaic` / `mixup` / `cutmix` / `copy_paste` live under `augment.batch.*`
+(master switch `enabled`, default **false**; per-type probs default **0**) and run
+in `train_one_epoch` as YOLO-style **pick-one** — at most one type per batch, each
+type firing with exactly its configured probability. Master off or all-zero probs
+is a strict no-op (training identical to before). The active sample-level pipeline
+in `transforms.get_train_transforms()` is a fixed geometric + photometric stack
 (RandomCrop, Affine, GridDistortion, RandomBrightnessContrast, GaussNoise,
-GaussianBlur) plus the config-driven `boundary_blur` and optional `flips`.
-The full preset / batch-aug system would be wired in `nbs/05_transforms.ipynb`
-and the train loop in `nbs/10_train.ipynb`.
+GaussianBlur) plus the config-driven `boundary_blur` and optional `flips` —
+unchanged. The full preset system would be wired in `nbs/05_transforms.ipynb`;
+batch augs live in `nbs/10_train.ipynb` (`apply_batch_augs`) with the Hydra
+resolver `resolve_batch_aug_cfg` in `nbs/15_hydra_pipeline.ipynb`.
 
 ### `dataset.py` — PyTorch datasets and loaders
 
@@ -234,8 +240,8 @@ skipped with a warning instead of raising an error — all other pretrained laye
 ### `train.py` — training loop
 `train()` — resumable training loop with:
 - AMP (automatic mixed precision)
-- Encoder freeze for `freeze_epochs` then full unfreezing
-- Batch-level augmentations (mosaic/mixup/cutmix/copy_paste) in the loop
+- Encoder freeze via `freeze_epochs`: `0` = no freeze, `N > 0` = warm-up then unfreeze at epoch `N`, `-1` = frozen forever (decoder + head only train)
+- Batch-level augmentations (mosaic/mixup/cutmix/copy_paste) in the loop — YOLO-style pick-one behind `augment.batch.enabled` (default off; per-type probs default 0; off/zero = strict no-op)
 - Checkpoint: `latest.pth` every epoch, `best.pth` when `best_metric` improves
 - `history.json` — full epoch-by-epoch loss + metric log
 - `resume_from` — explicit checkpoint path to resume from (not just `latest.pth`)
@@ -279,14 +285,16 @@ history = train(..., callbacks=[EarlyStopping(patience=10)])
 
 #### Default monitoring callbacks
 
-`segpt-train` enables two built-in callbacks via the `monitoring:` section in `train.yaml`:
+`segpt-train` enables the monitoring callbacks below via the `monitoring:` section in `train.yaml`. `ErrorAnalysisCallback` is opt-in (default off):
 
 | Callback | Output | Purpose |
 |---|---|---|
 | `ActivationStatsCallback` | `checkpoints/activation_stats/epochNNN/layerXX_*_color_dim.png` | fastai-style activation histograms; bright band at bin 0 → dying features |
 | `PredOverlayCallback` | `checkpoints/predictions/epochNNN/val_batchN_{labels,pred,compare}.jpg` | YOLO-style GT/pred overlay mosaics each epoch |
+| `ErrorAnalysisCallback` (opt-in) | `checkpoints/error_analysis/{split}_top{k}[_class].jpg` + `top_ranked.json` | post-training worst-sample triage at train end: 4-column posters (image \| GT overlay α=0.1 \| pred overlay \| FN/FP difference) ranked by `rank_by: loss` (highest first) or a pixel metric (lowest first); multilabel `per_class: true` writes one poster per class head |
+| `EncoderDriftCheck` (opt-in) | stdout verdict at train end (no files) | answers "did the encoder weights change?": bit-identical digest check before/after training; per-layer cosine report on drift; raises when `expect_frozen=true` (derive from `freeze_epochs: -1`) |
 
-Disable either with `monitoring.activation_stats.enabled=false` or `monitoring.pred_overlays.enabled=false`. Custom callbacks can still be passed from a notebook via `train(..., callbacks=[...])`.
+Disable the first two with `monitoring.activation_stats.enabled=false` or `monitoring.pred_overlays.enabled=false`. Custom callbacks can still be passed from a notebook via `train(..., callbacks=[...])`.
 
 ```yaml
 monitoring:
@@ -301,6 +309,17 @@ monitoring:
     every: 1
     max_val_batches: 3
     jpeg_quality: 90
+  error_analysis:
+    enabled: false          # post-training worst-sample posters; default off
+    top_k: 12
+    rank_by: loss           # loss | iou | dice | recall | precision
+    splits: [train, val]
+    alpha: 0.1
+    jpeg_quality: 90
+    per_class: true
+  encoder_drift_check:
+    enabled: false        # verify encoder weights unchanged after training; default off
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise on drift; false = report only
 ```
 
 ### `inference.py` — sliding-window inference
@@ -422,7 +441,7 @@ train:
   batch_size: 16
   encoder_lr: 1.0e-4
   decoder_lr: 1.0e-3
-  freeze_epochs: 5
+  freeze_epochs: 5 # 0 = no freeze; N > 0 = unfreeze at epoch N; -1 = encoder frozen forever
   crop_size: 256
   use_amp: true
   resume: true
@@ -446,8 +465,13 @@ augment:
   preset: yolo26m
   fliplr: 0.0                      # set 0 for orientation-sensitive X-ray
   flipud: 0.0
-  mixup: 0.05
-  copy_paste: 0.11
+  batch:                           # batch-level augs: YOLO-style pick-one (at most one type per batch)
+    enabled: false                 # master switch; false or all probs 0 = no batch aug at all
+    mosaic: 0.0
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip
 
 monitoring:
   activation_stats:
@@ -461,6 +485,17 @@ monitoring:
     every: 1
     max_val_batches: 3
     jpeg_quality: 90
+  error_analysis:
+    enabled: false        # post-training worst-sample posters; default off (existing runs unchanged)
+    top_k: 12
+    rank_by: loss
+    splits: [train, val]
+    alpha: 0.1
+    jpeg_quality: 90
+    per_class: true
+  encoder_drift_check:
+    enabled: false        # verify encoder weights unchanged after training; default off
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise on drift; false = report only
 
 export:
   onnx: false                      # requires onnx + onnxruntime installed in the venv
@@ -694,3 +729,51 @@ impractical for very large ones. Use one of these strategies instead:
 | Very large + fast iteration needed | Switch to `data.patch_mode: false` (direct mode) — loads full images with on-the-fly crop, no patch cache at all |
 
 Full guidance: `hpc/README.md` → "Large patch datasets" section.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues are the official board (`gh` CLI); `.scratch/` is for private drafts only. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+### nbdev implementation
+
+All feature work: literate `nbs/` → test steps → `nbdev-export` (never hand-edit `src/`). See `docs/agents/nbdev-implementation-contract.md`.
+
+## Learned User Preferences
+
+- Treat notebooks as literate programs (Knuth/nbdev): narrative + bullet plan first; then **experiment → verify** each step on synthetic data; only after every verify passes promote to `#| export` (dump-and-export is not literate). Tests sit as footnotes under the export. `/implement` (and TDD/code-review) still apply, but never skip this experiment→verify→function order — see `docs/agents/nbdev-implementation-contract.md`.
+- Prefer plain language over jargon; define unfamiliar terms briefly when first used (e.g. avoid unexplained words like “canonical”).
+- Prefer a wayfinder decision map before writing a design spec; ship phased tickets (umbrella/design first, then one implementable slice); finish one map through implement before starting the next; document deferred/out-of-scope items in the map or spec for later; create map/ticket/spec via the repo’s wayfinder flow rather than waiting indefinitely on grill answers.
+- Prefer reviewing draft agent-config files before they are written to disk.
+- Prefer GitHub Issues as the official tracker (`gh`); keep `.scratch/` for private drafts only.
+- Prefer the default Matt Pocock triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`.
+- On wayfinder grill questions (A/B/C), default to the agent’s expert recommendation for every question unless they explicitly override.
+- Include post-training error analysis in wayfinder/planning (grill-with-docs or related tickets), not only training and export.
+- Prefer config-only control so any segmentation task works by editing Hydra YAML without code changes (including class/head names and optional inference post-processing on/off).
+- Prefer independently toggleable batch-level augmentations in config (mixup, cutmix, mosaic, copy_paste, alone or combined).
+- Prefer default ImageNet encoder weights with freeze warmup, plus a config path to keep the encoder frozen for the full run.
+- When changing library behavior in notebooks, also update related agent skills so non-power-users can ask the agent and get working scripts.
+
+## Learned Workspace Facts
+
+- DINOv3 ViT-S/16 and B/16 are available via `get_model()` as `dinov3_vit_small` / `dinov3_vit_base`; curated aliases `convnext_tiny` / `efficientnetv2_s` (and raw `tu-convnext_tiny` / `tu-tf_efficientnetv2_s`) are first-class in `get_model` / `list_smp_encoders`; Hydra packages live under `configs/model/`.
+- Mask config is resolved with `resolve_mask_cfg(cfg)` → `{mask_mode, mask_channels, class_names}`; `validate_mask_mode(cfg)` validates companions and returns `(mask_mode, mask_channels, class_names)`.
+- This is a general segmentation library: class/head names are config-driven; Chip/Void/LiftedChip is an example multi-head use case, not hard-coded product vocabulary. Active focus also includes MatriX↔SAKI domain shift, post-training error analysis, and a config-selectable SMP vs custom UNet factory (ASPP/attention knobs).
+- GitHub remote for this repo is `HasanGoni/segmentation_tools_pt`.
+- FP32 ONNX export works for `dinov3_vit_small` (and raw `tu-*` Unets) at `in_channels=1`, multilabel `num_classes=3`; `onnx`/`onnxruntime` are optional/commented in `pyproject.toml`; INT8/TensorRT not validated.
+- Shared nbdev implementation contract lives at `docs/agents/nbdev-implementation-contract.md`; wayfinder map for multi-head encoder/robustness is tracked on GitHub Issues.
+- Custom UNet/SMP factory design lives at `docs/superpowers/specs/2026-10-01-custom-unet-smp-factory-design.md` (`model.source: smp | custom_unet`; ASPP/attention are v1 options, default off).
+- Multi-head robustness design lives at `docs/superpowers/specs/2026-10-01-multi-head-robustness-design.md`.
+- DINOv3 pretrained weights load via timm's hub inside `Dinov3ReassembleEncoder.__init__` (`pretrained=True` threaded through the SMP encoder registry); `encoder_weights=None` only switches off smp's state-dict loader, which would fail because the DINOv3 checkpoint has no keys for the added reassemble layers.
+- `ErrorAnalysisCallback` was decided in closed issue #9: fires on `on_train_end`, config under `monitoring.error_analysis`, default off, val top-k JPEG/JSON; implemented and closed via issue #18 (fuller poster spec folded into it: 4-column image | GT overlay α≈0.1 | pred overlay | diff overlay; train+val; rank by loss or metric; configurable top-k).
+- `losses.py` exports a loss stack newer than the Tversky+Dice+boundary combiner: `TverskyFocalLoss`, `ForeGroundAwareLoss`, `hierarchy_regularizer_loss`, `SegLoss`, `resolve_loss_weights`.
+- Multi-head robustness map #1 progress: #15 (DINOv3 encoders), #18 (`ErrorAnalysisCallback`), #16 (`freeze_epochs: -1` freeze-forever, commit `793dfbb`), and #19 (class-targeted morph postprocess: `inference.apply_class_morph` + `hydra_pipeline.resolve_class_morph_cfg` + `postprocess.class_morph` config, default off) are implemented and closed; active work branch is `feat/dinov3-encoder-decoder`; remaining `ready-for-agent` tickets: #20 (FP32 ONNX + batched tile inference).

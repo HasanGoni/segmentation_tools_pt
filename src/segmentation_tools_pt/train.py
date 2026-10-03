@@ -6,10 +6,14 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/train.html.md"""
 
 # %% auto #0
 __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverlayCallback', 'build_default_callbacks',
-           'train_one_epoch', 'validate', 'save_checkpoint', 'load_checkpoint', 'train']
+           'ErrorAnalysisCallback', 'EncoderDriftCheck', 'train_one_epoch', 'validate', 'save_checkpoint',
+           'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch', 'apply_mosaic_batch',
+           'apply_copy_paste_batch', 'apply_batch_augs', 'train']
 
-# %% ../../nbs/10_train.ipynb #0554c195
+# %% ../../nbs/10_train.ipynb #004813cc
+import hashlib
 import json
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -19,17 +23,18 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #d69432cc
+# %% ../../nbs/10_train.ipynb #9120c502
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
 from segmentation_tools_pt.metrics import SegMetrics
 from segmentation_tools_pt.model import get_param_groups, freeze_encoder, unfreeze_encoder
 from segmentation_tools_pt.visualize import (
     save_color_dim_png, save_near_zero_png, save_overlay_grid_jpeg, save_multilabel_overlay_grid_jpeg,
+    rank_samples, rank_samples_per_class, save_error_poster,
 )
 
 
-# %% ../../nbs/10_train.ipynb #004ca50b
+# %% ../../nbs/10_train.ipynb #2b2caa6b
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -58,7 +63,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #79c52985
+# %% ../../nbs/10_train.ipynb #9370451b
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -77,7 +82,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #c163199e
+# %% ../../nbs/10_train.ipynb #8691ff39
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -254,6 +259,15 @@ def build_default_callbacks(
     pred_jpeg_quality: int = 90,
     task: str = None,   # 'binary' | 'multiclass' | 'multilabel'; None infers from num_classes
     class_names: Optional[Sequence[str]] = None,  # multilabel legend labels for PredOverlayCallback
+    error_analysis: bool = False,  # post-training worst-sample posters; default off so existing runs are unchanged
+    ea_top_k: int = 12,            # worst samples per split (and per class)
+    ea_rank_by: str = 'loss',      # 'loss' | 'iou' | 'dice' | 'recall' | 'precision'
+    ea_splits: Sequence[str] = ('train', 'val'),
+    ea_alpha: float = 0.1,         # GT / pred overlay transparency
+    ea_jpeg_quality: int = 90,
+    ea_per_class: bool = True,     # multilabel: one poster per class head
+    drift_check: bool = False,     # verify encoder weights unchanged after training; default off so existing runs are unchanged
+    drift_expect_frozen: Optional[bool] = None,  # True = raise on drift (freeze-forever); None = caller decides (scripts derive from freeze_epochs)
 ) -> List[TrainCallback]:
     "Factory for on-by-default training monitoring callbacks."
     cbs: List[TrainCallback] = []
@@ -268,10 +282,155 @@ def build_default_callbacks(
             max_val_batches=pred_max_val_batches, jpeg_quality=pred_jpeg_quality,
             num_classes=num_classes, task=task, class_names=class_names,
         ))
+    if error_analysis:
+        cbs.append(ErrorAnalysisCallback(
+            checkpoint_dir, top_k=ea_top_k, rank_by=ea_rank_by, splits=ea_splits,
+            alpha=ea_alpha, jpeg_quality=ea_jpeg_quality, per_class=ea_per_class,
+            num_classes=num_classes, task=task, class_names=class_names, threshold=threshold,
+        ))
+    if drift_check:
+        cbs.append(EncoderDriftCheck(expect_frozen=bool(drift_expect_frozen)))
     return cbs
 
 
-# %% ../../nbs/10_train.ipynb #99f97a32
+class ErrorAnalysisCallback(TrainCallback):
+    """Post-training error triage: rank the worst samples per split and save 4-column JPEG posters.
+
+    One row per sample: image | GT overlay (`alpha`) | pred overlay | difference overlay
+    (FN green / FP red / overlap magenta). `rank_by='loss'` ranks highest loss first;
+    pixel metrics (`iou`/`dice`/`recall`/`precision`) rank lowest first. Multilabel with
+    `per_class=True` writes one poster per class head. Outputs under
+    `{checkpoint_dir}/error_analysis/`: `{split}_top{k}.jpg` (+ `_{class}` per class)
+    and `top_ranked.json` (`sample_id`, `split`, `score`, `rank_by`, optional `class`).
+    """
+    order = 30
+
+    def __init__(
+        self,
+        checkpoint_dir: str,
+        top_k: int = 12,               # worst samples per split (and per class)
+        rank_by: str = 'loss',         # 'loss' | 'iou' | 'dice' | 'recall' | 'precision'
+        splits: Sequence[str] = ('train', 'val'),
+        alpha: float = 0.1,            # GT / pred overlay transparency
+        jpeg_quality: int = 90,
+        per_class: bool = True,        # multilabel: one poster per class head
+        num_classes: int = 1,
+        task: str = None,              # 'binary' | 'multiclass' | 'multilabel'; None infers
+        class_names: Optional[Sequence[str]] = None,
+        threshold=0.5,
+    ):
+        self.root = Path(checkpoint_dir) / 'error_analysis'
+        self.top_k = top_k
+        self.rank_by = rank_by
+        self.splits = list(splits)
+        self.alpha = alpha
+        self.jpeg_quality = jpeg_quality
+        self.per_class = per_class
+        self.num_classes = num_classes
+        self.task = task or ('binary' if num_classes == 1 else 'multiclass')
+        self.class_names = list(class_names) if class_names is not None else None
+        self.threshold = threshold
+
+    def _record(self, split: str, rank: int, rec: dict, class_name: Optional[str]) -> dict:
+        r = {'split': split, 'rank': rank, 'sample_id': rec['sample_id'],
+             'score': rec['score'], 'rank_by': self.rank_by}
+        if class_name is not None:
+            r['class'] = class_name
+        return r
+
+    def on_train_end(self, state: TrainState) -> None:
+        criterion = state.criterion
+        if criterion is None:
+            return
+        self.root.mkdir(parents=True, exist_ok=True)
+        loaders = {'train': state.train_loader, 'val': state.val_loader}
+        ranked_all = []
+        for split in self.splits:
+            loader = loaders.get(split)
+            if loader is None:
+                continue
+            ds, model = loader.dataset, state.model
+            if self.per_class and self.task == 'multilabel':
+                for c in range(self.num_classes):
+                    name = self.class_names[c] if self.class_names and c < len(self.class_names) else f'class{c}'
+                    ranked = rank_samples_per_class(model, ds, criterion, state.device, c,
+                                                    rank_by=self.rank_by, threshold=self.threshold)
+                    save_error_poster(
+                        model, ds, ranked, state.device, self.root / f'{split}_top{self.top_k}_{name}.jpg',
+                        rank_by=self.rank_by, k=self.top_k, alpha=self.alpha, threshold=self.threshold,
+                        jpeg_quality=self.jpeg_quality, task='multilabel', class_idx=c,
+                        class_names=self.class_names)
+                    ranked_all += [self._record(split, i, rec, name) for i, rec in enumerate(ranked[:self.top_k])]
+            else:
+                ranked = rank_samples(model, ds, criterion, state.device, rank_by=self.rank_by,
+                                      threshold=self.threshold, task=self.task)
+                save_error_poster(
+                    model, ds, ranked, state.device, self.root / f'{split}_top{self.top_k}.jpg',
+                    rank_by=self.rank_by, k=self.top_k, alpha=self.alpha, threshold=self.threshold,
+                    jpeg_quality=self.jpeg_quality, task=self.task, class_names=self.class_names)
+                ranked_all += [self._record(split, i, rec, None) for i, rec in enumerate(ranked[:self.top_k])]
+        (self.root / 'top_ranked.json').write_text(json.dumps(ranked_all, indent=2))
+
+
+def _sd_digest(sd: Dict[str, torch.Tensor]) -> str:
+    "Stable digest of a state dict: sorted keys + float32 bytes (numpy has no bf16 dtype)."
+    h = hashlib.md5()
+    for k, v in sorted(sd.items()):
+        h.update(k.encode())
+        h.update(v.detach().cpu().contiguous().float().numpy().tobytes())
+    return h.hexdigest()
+
+
+class EncoderDriftCheck(TrainCallback):
+    """Post-training answer to "did the encoder weights change?": digest the encoder
+    state dict at `on_train_begin`, compare at `on_train_end`.
+
+    Bit-identical -> prints a confirmation (the guarantee behind freeze-forever,
+    since AdamW never updates params without grads). Changed -> prints per-layer
+    cosine similarity, worst first. With `expect_frozen=True` a changed encoder
+    raises RuntimeError; otherwise it is a drift report for trainable encoders.
+    """
+    order = 40  # after error analysis (30): the guard verdict is the last word
+
+    def __init__(self, expect_frozen: bool = False, max_report: int = 8):
+        self.expect_frozen, self.max_report = expect_frozen, max_report
+        self.before: Optional[Dict[str, torch.Tensor]] = None
+        self.before_digest: Optional[str] = None
+
+    def on_train_begin(self, state):
+        enc = getattr(state.model, 'encoder', None)
+        if enc is None:
+            print('EncoderDriftCheck: model has no .encoder; nothing to check.')
+            return
+        self.before = {k: v.detach().clone() for k, v in enc.state_dict().items()}
+        self.before_digest = _sd_digest(self.before)
+
+    def on_train_end(self, state):
+        if self.before is None:
+            return
+        enc = state.model.encoder
+        if _sd_digest(enc.state_dict()) == self.before_digest:
+            print('EncoderDriftCheck: encoder weights bit-identical after training.')
+            self.before = None
+            return
+        sims = {}
+        for k, v in enc.state_dict().items():
+            b = self.before.get(k)
+            if b is None or b.numel() != v.numel():
+                continue
+            sims[k] = torch.cosine_similarity(
+                v.detach().flatten().float(), b.flatten().float(), dim=0).item()
+        worst = sorted(sims, key=sims.get)[:self.max_report]
+        print('EncoderDriftCheck: encoder weights CHANGED; worst layers by cosine similarity:')
+        for k in worst:
+            print(f'  {k}: cos={sims[k]:.4f}')
+        if self.expect_frozen:
+            raise RuntimeError('EncoderDriftCheck: encoder drifted although expect_frozen=True '
+                               '(e.g. freeze_epochs: -1) — frozen encoders must be bit-identical.')
+        self.before = None
+
+
+# %% ../../nbs/10_train.ipynb #b5750c75
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -290,7 +449,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #4c79f279
+# %% ../../nbs/10_train.ipynb #eaff0f32
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -304,6 +463,7 @@ def train_one_epoch(
     state: Optional[TrainState] = None,
     task: str = None,                  # 'binary' | 'multiclass' | 'multilabel'; None infers from num_classes
     metrics_threshold=0.5,             # float, or per-channel Sequence[float] for task='multilabel'
+    batch_augs: Optional[dict] = None, # {'mosaic','mixup','cutmix','copy_paste'}: probs; None = off
 ) -> Dict[str, float]:
     """Train for one epoch; return averaged losses and `train_*` metrics."""
     model.train()
@@ -316,6 +476,8 @@ def train_one_epoch(
         _call_callbacks(callbacks, 'on_train_batch_begin', state)
         images = batch['image'].to(device, non_blocking=True)
         targets = batch['mask'].to(device, non_blocking=True)
+        if batch_augs:
+            images, targets, _ = apply_batch_augs(images, targets, batch_augs)
         optimizer.zero_grad(set_to_none=True)
         if scaler is not None:
             with torch.amp.autocast('cuda'):
@@ -344,7 +506,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #441a2f7f
+# %% ../../nbs/10_train.ipynb #c0b85f31
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -385,7 +547,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #e7adbb71
+# %% ../../nbs/10_train.ipynb #82bfa37f
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -410,7 +572,118 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #28223f18
+# %% ../../nbs/10_train.ipynb #377866db
+_BATCH_AUG_ORDER = ('mosaic', 'mixup', 'cutmix', 'copy_paste')
+
+def _perm_from_rng(rng, B: int, device) -> torch.Tensor:
+    "Batch permutation drawn from the seeded Python `random` instance (keeps runs reproducible)."
+    return torch.as_tensor(rng.sample(range(B), B), device=device)
+
+def pick_batch_aug(
+    probs: dict,   # per-type probabilities, e.g. {'mixup': 0.05, 'mosaic': 0.1}
+    rng=None,      # python-random-like RNG; None = module-level `random`
+) -> Optional[str]:  # one of ('mosaic','mixup','cutmix','copy_paste') or None
+    """YOLO-style pick-one: at most one batch-aug type per batch, each with marginal prob `probs[type]`.
+
+    Example:
+        >>> pick_batch_aug({'mixup': 1.0}, random.Random(0))
+        'mixup'
+    """
+    rng = rng or random
+    cum, u = 0.0, rng.random()
+    for name in _BATCH_AUG_ORDER:
+        cum += float(probs.get(name, 0.0))
+        if u < cum:
+            return name
+    return None
+
+def apply_mixup_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Blend each sample with a permuted partner (image + mask); scalar `lam ~ Beta(32, 32)` = mild blending."""
+    rng = rng or random
+    lam = min(0.999, max(0.001, rng.betavariate(32, 32)))
+    perm = _perm_from_rng(rng, images.shape[0], images.device)
+    images = lam * images + (1 - lam) * images[perm]
+    targets = lam * targets + (1 - lam) * targets[perm]
+    return images, targets
+
+def apply_cutmix_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Swap one random box (image + mask) with a permuted donor sample."""
+    rng = rng or random
+    _, _, H, W = images.shape
+    lam = rng.betavariate(1.0, 1.0)
+    cut_h = max(1, int(H * (1 - lam) ** 0.5)); cut_w = max(1, int(W * (1 - lam) ** 0.5))
+    cy, cx = rng.randrange(H), rng.randrange(W)
+    y0, y1 = max(0, cy - cut_h // 2), min(H, cy - cut_h // 2 + cut_h)
+    x0, x1 = max(0, cx - cut_w // 2), min(W, cx - cut_w // 2 + cut_w)
+    perm = _perm_from_rng(rng, images.shape[0], images.device)
+    donor_img, donor_tg = images[perm], targets[perm]  # advanced indexing -> copies, no aliasing
+    images = images.clone()
+    images[:, :, y0:y1, x0:x1] = donor_img[:, :, y0:y1, x0:x1]
+    targets = targets.clone()
+    targets[..., y0:y1, x0:x1] = donor_tg[..., y0:y1, x0:x1]
+    return images, targets
+
+def apply_mosaic_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Per-sample 2x2 mosaic (self + 3 rolled donors) on a (2H, 2W) canvas, random crop back to (H, W).
+
+    No-op when the batch has fewer than 4 samples.
+    """
+    rng = rng or random
+    B, _, H, W = images.shape
+    if B < 4:
+        return images, targets
+    d1, d2, d3 = images.roll(1, 0), images.roll(2, 0), images.roll(3, 0)
+    m1, m2, m3 = targets.roll(1, 0), targets.roll(2, 0), targets.roll(3, 0)
+    top_i, bot_i = torch.cat([images, d1], dim=-1), torch.cat([d2, d3], dim=-1)
+    top_m, bot_m = torch.cat([targets, m1], dim=-1), torch.cat([m2, m3], dim=-1)
+    canvas_img, canvas_tg = torch.cat([top_i, bot_i], dim=-2), torch.cat([top_m, bot_m], dim=-2)
+    y0, x0 = rng.randrange(0, H + 1), rng.randrange(0, W + 1)
+    return canvas_img[:, :, y0:y0 + H, x0:x0 + W], canvas_tg[..., y0:y0 + H, x0:x0 + W]
+
+def apply_copy_paste_batch(images: torch.Tensor, targets: torch.Tensor, rng=None):
+    """Paste a horizontally-flipped donor's foreground (image + mask union) into each sample.
+
+    Works for binary `(B,1,H,W)`/`(B,H,W)` and multilabel `(B,K,H,W)` masks; the paste
+    location is any donor foreground pixel, masks merge via maximum.
+    """
+    rng = rng or random
+    perm = _perm_from_rng(rng, images.shape[0], images.device)
+    donor_img = torch.flip(images[perm], dims=[-1])
+    donor_tg = torch.flip(targets[perm], dims=[-1])
+    fg = donor_tg > 0
+    if fg.dim() > 3:            # (B,1,H,W) or (B,K,H,W): reduce channel axis -> (B,1,H,W)
+        paste = fg.amax(dim=1, keepdim=True)
+    else:                        # (B,H,W)
+        paste = fg.unsqueeze(1)
+    images = torch.where(paste, donor_img, images)
+    targets = torch.maximum(targets, donor_tg)
+    return images, targets
+
+_BATCH_AUG_FNS = {
+    'mosaic': apply_mosaic_batch, 'mixup': apply_mixup_batch,
+    'cutmix': apply_cutmix_batch, 'copy_paste': apply_copy_paste_batch,
+}
+
+def apply_batch_augs(
+    images: torch.Tensor, targets: torch.Tensor,
+    batch_augs: Optional[dict],  # {'mosaic','mixup','cutmix','copy_paste'}: probs (extra keys ignored); None = off
+    rng=None,
+):
+    """Apply at most one batch-level augmentation per batch; return `(images, targets, applied_name)`.
+
+    `batch_augs=None` or all-zero probs -> identity with `applied_name=None` (strict no-op).
+    """
+    rng = rng or random
+    if not batch_augs:
+        return images, targets, None
+    name = pick_batch_aug(batch_augs, rng)
+    fn = _BATCH_AUG_FNS.get(name)
+    if fn is None:
+        return images, targets, None
+    images, targets = fn(images, targets, rng=rng)
+    return images, targets, name
+
+# %% ../../nbs/10_train.ipynb #ab0e1927
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
@@ -421,7 +694,7 @@ def train(
     batch_size: int = 16,           # batch size
     encoder_lr: float = 1e-4,       # encoder LR
     decoder_lr: float = 1e-3,       # decoder LR
-    freeze_epochs: int = 0,         # epochs to keep the encoder frozen
+    freeze_epochs: int = 0,         # 0 = no freeze; N > 0 = unfreeze at epoch N; -1 = frozen forever
     crop_size: int = 256,           # crop size
     n_source_channels: int = 2,     # raw channels per sample
     channel_names: Sequence[str] = DEFAULT_CHANNELS,  # model-image assembly
@@ -440,6 +713,7 @@ def train(
     best_metric: str = 'iou',       # metric to gate best.pth: iou | dice | recall | precision
     aug=None,                       # AugmentConfig for training augmentations
     boundary_blur: Optional[dict] = None,  # kwargs for BlurBoundaryZone (patch-mode training transform)
+    batch_augs: Optional[dict] = None,     # batch-level aug probs {'mosaic','mixup','cutmix','copy_paste'}; None = off
     num_workers: int = 4,           # DataLoader worker processes
     resume_from: Optional[str] = None,  # explicit checkpoint path to resume from; None = use latest.pth
     seed: Optional[int] = None,     # run seed for reproducible sampling and worker RNGs
@@ -522,7 +796,7 @@ def train(
             start_epoch, best_score, history = load_checkpoint(str(_resume_path), model, optimizer, scheduler, scaler, device)
         elif resume_from is not None:
             raise FileNotFoundError(f'resume_from checkpoint not found: {_resume_path}')
-    if freeze_epochs > 0:
+    if freeze_epochs != 0:
         freeze_encoder(model)
 
     state = TrainState(
@@ -542,11 +816,11 @@ def train(
         _w = resolve_loss_weights(epoch, _phases)
         criterion.set_weights(*_w)
         if freeze_epochs > 0 and epoch == freeze_epochs:
-            unfreeze_encoder(model)
+            unfreeze_encoder(model)  # -1 never matches (epochs start at 0) -> frozen forever
         tr = train_one_epoch(
             model, train_loader, criterion, optimizer, device, scaler,
             num_classes=num_classes, callbacks=callbacks, state=state,
-            task=task, metrics_threshold=metrics_threshold,
+            task=task, metrics_threshold=metrics_threshold, batch_augs=batch_augs,
         )
         state.train_metrics = tr
         va = validate(

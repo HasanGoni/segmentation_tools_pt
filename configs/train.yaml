@@ -6,25 +6,21 @@
 
 defaults:
   - data_patch
+  - model: mobilenet_v2   # library default; switch with model=dinov3_vit_small|convnext_tiny|efficientnetv2_s
   - _self_
 
 data:
   build_only: false
 
-model:
-  architecture: unet       # smp head: unet | fpn | deeplabv3plus | unetplusplus | ...
-  arch: mobilenet_v2      # smp encoder / backbone (any name from list_smp_encoders())
-  pretrained: false
-  weights_path: /path/to/models/mobilenet_v2.pth
-                            # local encoder .pth for air-gapped HPC (from download_encoder_weights)
-                            # set to null to download from internet instead
+# model.* comes from configs/model/<name>.yaml (architecture, arch, pretrained, weights_path).
+# data_patch supplies model.in_channels. Override any field on the CLI, e.g. model.pretrained=true.
 
 train:
   epochs: 100
   batch_size: 16
   encoder_lr: 1.0e-4
   decoder_lr: 1.0e-3
-  freeze_epochs: 5
+  freeze_epochs: 5          # 0 = no freeze; N > 0 = unfreeze at epoch N; -1 = encoder frozen forever
   crop_size: 656           # model-view crop size; must be <= patch.patch_size in patch mode
   use_amp: true
   save_every: 5
@@ -74,18 +70,26 @@ augment:
   erasing_ratio_min: 0.3
   erasing_ratio_max: 3.3
   erasing_fill: 0.0
-  mosaic: 0.0
-  mixup: 0.05
-  cutmix: 0.0
-  copy_paste: 0.110
-  copy_paste_mode: flip
-  close_mosaic: 0
+  batch:                           # batch-level augs (issue #17): pick-one, at most one type per batch
+    enabled: false                 # master switch — false = training identical to no batch aug
+    mosaic: 0.0                    # per-batch probs (marginal); all 0 = no-op even when enabled
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip          # 'flip' = paste horizontally-mirrored donor foreground
   extra_legacy: false
-  flips: false
+  flips: false                   # keep false for orientation-sensitive X-ray; true only for symmetric layouts
   boundary_blur: 0.4              # probability; 0 = disabled
   boundary_blur_width: [5, 21]    # morphological edge band (pixels, odd)
   boundary_blur_sigma: [3, 11]    # Gaussian sigma for edge smearing
   boundary_halo_brightness: [0.0, 0.15]  # outer-band brighten; [0, 0] = blur only
+
+postprocess:                       # inference/eval decode only — never applied to loss or raw train metrics
+  class_morph:                     # class-targeted morph cleanup (issue #19); resolve via resolve_class_morph_cfg
+    enabled: false                 # master switch — false = decode unchanged (strict no-op)
+    class_name: null               # class to clean, e.g. void — resolved against data.class_names; unknown name fails clearly
+    kernel_size: 3                 # opening structuring element side (odd); kills thin speckles
+    min_area: 16                   # drop connected components smaller than this many pixels (1 = keep all)
 
 monitoring:
   activation_stats:
@@ -99,6 +103,17 @@ monitoring:
     every: 1              # save overlays every N epochs
     max_val_batches: 3    # YOLO-style: first N validation batches
     jpeg_quality: 90
+  error_analysis:
+    enabled: false        # post-training worst-sample posters; default off (existing runs unchanged)
+    top_k: 12             # worst samples per split (and per class)
+    rank_by: loss         # loss | iou | dice | recall | precision
+    splits: [train, val]  # both ranked/postered when enabled
+    alpha: 0.1            # GT / pred overlay transparency
+    jpeg_quality: 90
+    per_class: true       # multilabel: one poster per class head
+  encoder_drift_check:
+    enabled: false        # verify encoder weights unchanged after training; set true for freeze-forever (freeze_epochs: -1) DINOv3 runs
+    expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise if drifted; false = report only
 
 export:
   onnx: false

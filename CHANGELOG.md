@@ -5,6 +5,72 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-02
+
+Class-targeted morph postprocess (#19, from spec in #14).
+
+- Added `apply_class_morph` (`nbs/11_inference.ipynb`): cleans **one named class channel** of a decoded multilabel mask with classical morphology — opening (erode→dilate, outside-image treated as background, so border-touching speckles are removable) followed by connected-component min-area filtering. Other channels pass through untouched; `(C,H,W)` and `(B,C,H,W)`, no input mutation; bad `class_idx`/`kernel_size`/`min_area` raise a clear `ValueError`.
+- Fixed inference decode order: threshold decode (`decode`) → class morph (`apply_class_morph`) → hierarchy (`apply_hierarchy`). The order test pins morph-then-hierarchy by cleaning the *super* channel: a `void` speckle under a removed `chip` speckle must die with it.
+- Inference/eval/production decode **only** — never applied to the training loss or to raw train metrics (those judge the model as-is).
+- Added `resolve_class_morph_cfg` (`nbs/15_hydra_pipeline.ipynb`): maps the config block `postprocess.class_morph.*` (master switch default **false**; `class_name`, `kernel_size: 3`, `min_area: 16`) to `apply_class_morph` args, resolving `class_name` against `data.class_names`. Disabled/missing block → `None` (strict no-op); enabled without a name, no `class_names`, or unknown `class_name` → clear `ValueError`.
+- Config block added to `configs/train.yaml` / `train_example.yaml` / `train_multilabel_3head.yaml` (default off; product recipes may set e.g. `class_name: void`).
+- Documented in `docs/TRAINING_CLI.md` and the `run-inference` skill.
+
+Batch-level augmentations, YOLO-style pick-one (#17, from spec in #14).
+
+- Wire `mosaic` / `mixup` / `cutmix` / `copy_paste` into `train_one_epoch` (`nbs/10_train.ipynb`): applied on the batch after it lands on the device, before forward. `mosaic` = per-sample 2x2 canvas (self + 3 rolled donors) at `(2H, 2W)` with a random crop back to `(H, W)` (no-op when `B < 4`); `mixup` = convex blend with a permuted partner, scalar `lam ~ Beta(32, 32)` (mild blending, masks stay mostly intact); `cutmix` = one random box (image + mask) swapped with a permuted donor; `copy_paste` (`mode: flip`) = paste a horizontally-flipped donor's foreground, masks merge via maximum. Shape-generic over mask layouts `(B,H,W)`, `(B,1,H,W)`, `(B,K,H,W)`; metrics/loss see augmented targets (YOLO convention), validation untouched.
+- YOLO-style **pick-one**: per batch, one uniform draw walks cumulative thresholds in a fixed order (`mosaic → mixup → cutmix → copy_paste`), so each type fires with exactly its configured marginal probability and at most one type applies per batch. All randomness (including donor permutations) flows through the seeded Python `random` instance — runs stay reproducible via `set_seed`.
+- Config: `augment.batch.enabled` master switch (default **false**) + per-type probs (default **0**) + `copy_paste_mode` in `configs/train.yaml` / `train_example.yaml` / `train_multilabel_3head.yaml`; stale top-level placeholder probs (`mixup: 0.05`, `copy_paste: 0.11`, `close_mosaic`) removed. Master off or all-zero probs is a strict no-op — notebook test asserts all-zero training numbers are identical to `batch_augs=None`.
+- Wiring: `resolve_batch_aug_cfg` (`nbs/15_hydra_pipeline.ipynb`, returns `None` when disabled/zero) → `scripts/train.py` passes `batch_augs=` to `train()` and logs the active set; `train()` threads it into `train_one_epoch`.
+- Notebook tests (synthetic): pick-one marginals match configured probs over 20k draws; per-aug pixel/mask semantics (union masks, donor pixels pasted, B<4 mosaic no-op); dispatcher on/off/deterministic-prob-1.0; `train_one_epoch` off==zero equivalence + enabled run finite; `train()` smoke with batch augs.
+- Updated `AGENTS.md`, `docs/TRAINING_CLI.md` (recipe note: keep flips off for orientation-sensitive X-ray; multiclass integer masks — prefer cutmix/copy_paste over mixup), and the `choose-augmentation` skill.
+- Added `tutorials/04_augmentation_playground.ipynb` (linked from `docs/TRAINING_CLI.md`): point it at your own `IMAGE_PATHS` / `MASK_PATHS` (or its synthetic demo data) to visualize every batch-aug type forced on, realistic pick-one sampling over virtual batches, and the sample-level Albumentations stack. Demo-only — no `#| export`, not run by `nbdev-test`.
+
+Encoder drift check callback (#21, from spec in #14).
+
+- Added `EncoderDriftCheck` (`nbs/10_train.ipynb`, `TrainCallback` order 40): digests the encoder `state_dict` at `on_train_begin` (sorted keys + float32 bytes) and compares at `on_train_end`. Bit-identical → confirmation print; changed → per-layer cosine similarity report (worst layers first, `max_report` capped). With `expect_frozen=True` a changed encoder raises `RuntimeError` — the deterministic guarantee behind freeze-forever (`freeze_epochs: -1`), since AdamW never updates params without grads. Models without `.encoder` are a no-op. Note: activation histograms are *not* a frozen-ness check — they shift because augmentation changes inputs, not because weights moved.
+- Wired via `build_default_callbacks(..., drift_check=..., drift_expect_frozen=...)` and `monitoring.encoder_drift_check` (`enabled`, `expect_frozen: null` = derive from `train.freeze_epochs == -1`) in `configs/train.yaml` / `train_example.yaml` / `train_multilabel_3head.yaml` (enabled there for the DINOv3 recipe) / `scripts/train.py`. Default **off**; existing runs unchanged.
+- Notebook tests on synthetic encoder/decoder/head data: freeze-forever run passes the guard, drifted run reports and raises under `expect_frozen`, no-`.encoder` no-op, wiring via `build_default_callbacks`. Updated `AGENTS.md` monitoring table and the `training-monitoring-callbacks` skill.
+
+Freeze-forever training (`freeze_epochs: -1`, #16, from spec in #14).
+
+- `train()` (`nbs/10_train.ipynb`) now freezes the encoder whenever `freeze_epochs != 0`: `0` = no freeze (unchanged), `N > 0` = warm-up then unfreeze at epoch `N` (unchanged), `-1` = encoder frozen for the entire run — only the decoder and segmentation head train. The unfreeze condition (`freeze_epochs > 0 and epoch == freeze_epochs`) never fires for `-1` since epochs start at 0, so freeze-forever needs no extra branch.
+- Notebook tests on a synthetic encoder/decoder/head model track per-epoch `requires_grad` at the first training batch (batch-level, because `on_epoch_begin` fires before the epoch's unfreeze): `-1` → frozen every epoch, `0` → never frozen, `2` → frozen epochs 0–1, unfrozen at epoch 2.
+- Config comments (`configs/train.yaml`, `train_example.yaml`, `train_multilabel_3head.yaml`), `docs/TRAINING_CLI.md` encoder-freeze note, `AGENTS.md`, and the `configure-training-schedule` skill now document the three-way semantics.
+
+Post-training error analysis callback (#18, from spec in #14 / decision in #9).
+
+- Added `ErrorAnalysisCallback` (`nbs/10_train.ipynb`): fires `on_train_end`, ranks the worst samples per split and writes 4-column JPEG posters under `checkpoints/error_analysis/` — image | GT overlay (α from config, default 0.1) | pred overlay | difference overlay (FN green / FP red / overlap magenta) — plus a small `top_ranked.json` (`sample_id`, `split`, `score`, `rank_by`, optional `class`). Default **off**; existing runs unchanged.
+- Added ranking helpers in `nbs/12_visualize.ipynb`: `rank_samples` (per-sample worst-first records; `rank_by: loss` highest-first, `iou|dice|recall|precision` lowest-first via `SegMetrics` on single samples), `rank_samples_per_class` (multilabel per-head ranking; loss ranking slices the class channel and scores it with a binary copy of the criterion), and `save_error_poster` (top-k 4-column poster; multilabel per-channel rendering with class legend, multiclass one-hot columns).
+- Multilabel `per_class: true` writes one poster per class head (`{split}_top{k}_{class}.jpg`); no combined poster.
+- Wired via `build_default_callbacks(..., error_analysis=..., ea_top_k=..., ea_rank_by=..., ea_splits=..., ea_alpha=..., ea_jpeg_quality=..., ea_per_class=...)` and `monitoring.error_analysis` in `configs/train.yaml` / `train_example.yaml` / `scripts/train.py` (explicit kwargs only, same pattern as activation stats / pred overlays).
+- Notebook tests on synthetic data: binary train+val posters + worst-first JSON + default-off preserved; multilabel per-class posters ranked per head. Full suite clean for `10_train.ipynb` / `12_visualize.ipynb`.
+- Updated `AGENTS.md` monitoring table, `training-monitoring-callbacks` and `segmentation-error-analysis` skills.
+
+## 2026-10-01
+
+Curated encoders + Hydra encoder preset packages (#15).
+
+- `get_model` / `list_smp_encoders` treat curated aliases as first-class: `convnext_tiny` → `tu-convnext_tiny`, `efficientnetv2_s` → `tu-tf_efficientnetv2_s`; raw curated `tu-*` builds without warnings; other `tu-*` warn once; unknown non-`tu-*` hard-error.
+- Added Hydra packages under `configs/model/` (`mobilenet_v2`, `dinov3_vit_small`, `convnext_tiny`, `efficientnetv2_s`) setting `model.*` only. `configs/train.yaml` composes MobileNet (library default); `train_multilabel_3head.yaml` composes DINOv3-S (primary recommendation). Shut-off = `model=mobilenet_v2`.
+- Updated `choose-model-architecture` skill for curated vs experimental guidance.
+- Synthetic nbdev tests: allowlist/warn-once, Hydra compose, curated `export_onnx` smoke via `get_model`.
+- Rewrote the curated section in `nbs/09_model.ipynb` as literate **experiment → verify → promote to `#| export`** (alias map, raw `tu-*` forward, allowlist policy, discovery list), then API/Hydra/ONNX tests under the export.
+- Fixed ImageNet weight scratch cells in `nbs/09_model.ipynb`: resolve a real file (portable `.pth` or hub `model.safetensors`), never `torch.load` the HF hub directory; save `/tmp/.../mobilenet_v2_encoder.pth` for later air-gapped `get_model(weights_path=...)`.
+- Added `validate_mask_mode` in `nbs/15_hydra_pipeline.ipynb` (strict companion-field checks for stacked / per_class_files).
+- Agent/domain docs: `CONTEXT.md`, `docs/agents/*`, design specs under `docs/superpowers/specs/`; refreshed learned preferences in `AGENTS.md` (literate+implement, finish-one-map, config-driven class names, skill sync).
+- Refined GitHub issue #18 (error-analysis callback): 4-column JPEG posters, train+val, `rank_by` loss|metric (tracker only).
+
+
+## 2026-09-27
+
+Added a DINOv3 encoder-decoder (`nbs/09_model.ipynb`) — the library had no ViT-based backbone, only smp's CNN encoders.
+
+- Added `Dinov3ReassembleEncoder`: wraps `timm`'s `vit_*_patch16_dinov3` (already available via `timm>=1.0.28`, added as a direct dependency) and reassembles 4 tapped transformer layers into a stride `[2,4,8,16,32]` pseudo-pyramid (DPT-style), the missing stride-2 skip synthesized by upsampling the stride-4 map. Registered into `smp.encoders.encoders` as `dinov3_vit_small` / `dinov3_vit_base`, so it works through the existing `get_model(arch='dinov3_vit_small', architecture='unet'|'fpn'|..., ...)` call — no new API, `get_param_groups` / `freeze_encoder` / `unfreeze_encoder` / Hydra configs unchanged.
+- Pretrained DINOv3 weights load via `timm`'s own hub download at construction time, not smp's `encoder_weights='imagenet'` state-dict loader (which would `load_state_dict` the whole encoder against a checkpoint missing the reassemble layers); `get_model()` threads `pretrained` through the registry's construction params instead and forces `encoder_weights=None` for `dinov3_*` encoders.
+- Single/multi-channel input (`in_channels=1,2,3,...`) works via the existing `EncoderMixin.set_in_channels` → `patch_first_conv` path, reusing the same weight-averaging convention as every other encoder in the library.
+- Fixed a pre-existing `NameError`/`FileNotFoundError` in `nbs/09_model.ipynb`'s local-weights scratch cells (missing `Path` import) by marking them `#| eval: false` so `nbdev-test` skips them instead of failing before reaching the exported cells.
+
 ## 2026-07-16
 
 Single-channel patch naming fix + HPC workflow gate + patch-config update for new dataset.

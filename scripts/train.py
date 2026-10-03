@@ -26,6 +26,7 @@ from segmentation_tools_pt.core import platform_info, set_seed
 from segmentation_tools_pt.dataset_build import discover_samples
 from segmentation_tools_pt.export import export_onnx
 from segmentation_tools_pt.hydra_pipeline import (
+    resolve_batch_aug_cfg,
     resolve_boundary_blur_cfg,
     resolve_deterministic,
     resolve_hierarchy_pairs,
@@ -227,10 +228,18 @@ def main(cfg: DictConfig) -> None:
     )
 
     boundary_blur = resolve_boundary_blur_cfg(cfg)
+    batch_augs = resolve_batch_aug_cfg(cfg)
+    if batch_augs:
+        active = {k: v for k, v in batch_augs.items() if v}
+        print(f'Batch augs (pick-one, at most one per batch): {active}')
+    else:
+        print('Batch augs: off (augment.batch.enabled=false or all probs 0)')
 
     mon = cfg.get('monitoring', {})
     act_cfg = mon.get('activation_stats', {})
     pred_cfg = mon.get('pred_overlays', {})
+    ea_cfg = mon.get('error_analysis', {})
+    drift_cfg = mon.get('encoder_drift_check', {})
     hist_range = act_cfg.get('hist_range', [0, 10])
     callbacks = build_default_callbacks(
         checkpoint_dir=str(checkpoint_dir),
@@ -245,6 +254,18 @@ def main(cfg: DictConfig) -> None:
         pred_every=int(pred_cfg.get('every', 1)),
         pred_max_val_batches=int(pred_cfg.get('max_val_batches', 3)),
         pred_jpeg_quality=int(pred_cfg.get('jpeg_quality', 90)),
+        error_analysis=bool(ea_cfg.get('enabled', False)),
+        ea_top_k=int(ea_cfg.get('top_k', 12)),
+        ea_rank_by=str(ea_cfg.get('rank_by', 'loss')),
+        ea_splits=tuple(ea_cfg.get('splits', ['train', 'val'])),
+        ea_alpha=float(ea_cfg.get('alpha', 0.1)),
+        ea_jpeg_quality=int(ea_cfg.get('jpeg_quality', 90)),
+        ea_per_class=bool(ea_cfg.get('per_class', True)),
+        drift_check=bool(drift_cfg.get('enabled', False)),
+        drift_expect_frozen=(
+            bool(drift_cfg.expect_frozen) if drift_cfg.get('expect_frozen') is not None
+            else cfg.train.freeze_epochs == -1  # derive: freeze-forever runs must stay bit-identical
+        ),
         task=task,
         class_names=mask_cfg['class_names'],
     )
@@ -279,6 +300,7 @@ def main(cfg: DictConfig) -> None:
         best_metric=cfg.metrics.best_metric,
         aug=None,
         boundary_blur=boundary_blur,
+        batch_augs=batch_augs,
         num_workers=cfg.train.num_workers,
         seed=run_seed,
         callbacks=callbacks or None,
