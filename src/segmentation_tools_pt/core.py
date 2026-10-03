@@ -7,7 +7,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/core.html.md"""
 # %% auto #0
 __all__ = ['set_seed', 'get_device', 'SegConfig', 'platform_info']
 
-# %% ../../nbs/00_core.ipynb #5ce3ac71
+# %% ../../nbs/00_core.ipynb #36081d0e
 import os
 import random
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-# %% ../../nbs/00_core.ipynb #2bbd2d7c
+# %% ../../nbs/00_core.ipynb #240e6450
 def set_seed(
     seed: int = 42,        # value to seed every RNG with
     deterministic: bool = True,  # force cuDNN into deterministic (slower) mode
@@ -39,7 +39,7 @@ def set_seed(
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-# %% ../../nbs/00_core.ipynb #1ded1f2b
+# %% ../../nbs/00_core.ipynb #44114654
 def get_device(
     prefer_cuda: bool = True,  # use CUDA when available
 ) -> torch.device:
@@ -53,7 +53,7 @@ def get_device(
         return torch.device('cuda')
     return torch.device('cpu')
 
-# %% ../../nbs/00_core.ipynb #c5e97ea3
+# %% ../../nbs/00_core.ipynb #0573fd99
 @dataclass
 class SegConfig:
     """Describes a segmentation task end-to-end.
@@ -75,7 +75,7 @@ class SegConfig:
         "True when this is a single-foreground binary task."
         return self.num_classes == 1
 
-# %% ../../nbs/00_core.ipynb #5f582989
+# %% ../../nbs/00_core.ipynb #b94bbb30
 def platform_info() -> dict:
     """Return OS, Python bitness and key CV library versions as a dict.
 

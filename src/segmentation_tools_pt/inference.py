@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/inference.html.md"""
 __all__ = ['predict', 'decode', 'apply_hierarchy', 'apply_class_morph', 'find_operating_threshold', 'tile_starts',
            'predict_tiled']
 
-# %% ../../nbs/11_inference.ipynb #6be6b3ed
+# %% ../../nbs/11_inference.ipynb #0ecb20dc
 import cv2
 
 from typing import Dict, List, Optional, Sequence
@@ -19,10 +19,28 @@ import torch
 from .stitching import gaussian_weight_map
 
 
-# %% ../../nbs/11_inference.ipynb #10f5fa66
+# %% ../../nbs/11_inference.ipynb #756673f1
 from segmentation_tools_pt.metrics import ObjectMetrics
 
-# %% ../../nbs/11_inference.ipynb #411877eb
+# %% ../../nbs/11_inference.ipynb #e3b49df3
+def _activate(
+    logits: torch.Tensor,  # (B, C, H, W) raw model output
+    task: str,             # 'binary' | 'multiclass' | 'multilabel'; None infers binary (C==1) or multiclass (C>1)
+    activate: bool,        # if False, return logits untouched
+) -> torch.Tensor:
+    """Sigmoid if `C==1` or `task='multilabel'`, softmax for multiclass, logits passthrough if `activate=False`.
+
+    The one activation rule shared by `predict` and `predict_tiled` (issue #25), kept
+    private so the two public entry points can never drift apart.
+
+    Example:
+        >>> _activate(torch.tensor([[[-2.0, 3.0]]]), None, True).round(decimals=3).tolist()
+        [[[0.119, 0.953]]]
+    """
+    if not activate: return logits
+    return torch.sigmoid(logits) if (logits.shape[1] == 1 or task == 'multilabel') else torch.softmax(logits, dim=1)
+
+# %% ../../nbs/11_inference.ipynb #5147486c
 @torch.no_grad()
 def predict(
     model,                 # trained model returning (B, C, H, W) logits
@@ -38,12 +56,7 @@ def predict(
     x = image.unsqueeze(0).to(device)
 
     def forward(t: torch.Tensor) -> torch.Tensor:
-        logits = model(t)
-        if not activate:
-            return logits
-        if logits.shape[1] == 1 or task == 'multilabel':
-            return torch.sigmoid(logits)
-        return torch.softmax(logits, dim=1)
+        return _activate(model(t), task, activate)
 
     if not tta:
         return forward(x).squeeze(0)
@@ -53,7 +66,7 @@ def predict(
         preds.append(torch.rot90(pr, -k, dims=[2, 3]))
     return torch.stack(preds).mean(0).squeeze(0)
 
-# %% ../../nbs/11_inference.ipynb #4ecc6a4a
+# %% ../../nbs/11_inference.ipynb #ee96ae0d
 def decode(
     probs: torch.Tensor,     # (C, H, W) probabilities
     threshold=0.5,            # decision threshold: float (binary/multilabel-shared), or per-channel Sequence[float] for multilabel
@@ -82,7 +95,7 @@ def decode(
         return (probs[0] >= threshold).long()
     return probs.argmax(0)
 
-# %% ../../nbs/11_inference.ipynb #5f2c20c4
+# %% ../../nbs/11_inference.ipynb #274d6ba3
 def apply_hierarchy(
     masks: torch.Tensor,  # (C, H, W) or (B, C, H, W) decoded/binary multilabel masks
     pairs,                  # [(sub_idx, super_idx), ...], e.g. [(1, 0), (2, 0)] for (void,chip),(lifted,chip)
@@ -148,7 +161,7 @@ def apply_class_morph(
         items[i] = torch.from_numpy(m.astype(bool)).to(masks.dtype)
     return masks
 
-# %% ../../nbs/11_inference.ipynb #282a8f0f
+# %% ../../nbs/11_inference.ipynb #b04029fe
 @torch.no_grad()
 def find_operating_threshold(
     model,                          # trained binary model
@@ -189,7 +202,7 @@ def find_operating_threshold(
     return {'recommended_threshold': best['threshold'], 'achieved_recall': best['recall'],
             'achieved_precision': best['precision'], 'sweep': sweep}
 
-# %% ../../nbs/11_inference.ipynb #ac624422
+# %% ../../nbs/11_inference.ipynb #1bee825a
 def tile_starts(
     extent: int,     # image extent along one axis (H or W), already padded up if smaller than tile_size
     tile_size: int,  # tile side along the same axis
@@ -246,14 +259,10 @@ def predict_tiled(
               for xx in tile_starts(Wp, tile_size, overlap)]  # row-major, fixed order
     tiles = torch.stack([x[0, :, y:y + tile_size, xx:xx + tile_size] for y, xx in coords])  # (N, C, ts, ts)
 
-    def activate_probs(logits: torch.Tensor) -> torch.Tensor:
-        if not activate: return logits
-        return torch.sigmoid(logits) if (logits.shape[1] == 1 or task == 'multilabel') else torch.softmax(logits, dim=1)
-
     wmap = gaussian_weight_map(tile_size, device=x.device)
     acc, wsum = None, x.new_zeros(1, Hp, Wp)
     for i in range(0, len(coords), inference_batch_size):
-        probs = activate_probs(model(tiles[i:i + inference_batch_size]))
+        probs = _activate(model(tiles[i:i + inference_batch_size]), task, activate)
         if acc is None: acc = probs.new_zeros(probs.shape[1], Hp, Wp)  # output-channel aware
         for j, (y, xx) in enumerate(coords[i:i + inference_batch_size]):
             acc[:, y:y + tile_size, xx:xx + tile_size] += wmap * probs[j]

@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/dataset_build.html.md"""
 __all__ = ['resolve_mask_path', 'resolve_mask_paths', 'resolve_channel_paths', 'discover_samples', 'split_sources',
            'build_patch_dataset']
 
-# %% ../../nbs/04_dataset_build.ipynb #6ae98d0c
+# %% ../../nbs/04_dataset_build.ipynb #b2d56e74
 import json
 import random
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
-# %% ../../nbs/04_dataset_build.ipynb #52034134
+# %% ../../nbs/04_dataset_build.ipynb #df0fdaf6
 from segmentation_tools_pt.patches import PatchConfig, extract_patches_from_sample
 
-# %% ../../nbs/04_dataset_build.ipynb #86c97d0e
+# %% ../../nbs/04_dataset_build.ipynb #82d73125
 # Suffixes stripped from image stems when grouping multi-channel files into one sample.
 _CHANNEL_SUFFIXES = ('_ch0', '_ch1', '_ch2', '_ch3', '_image1', '_image2', '_image3', '_image4')
 
@@ -33,7 +33,7 @@ def _stem_to_sample_id(stem: str, n_channels: int) -> str:
     return stem
 
 
-# %% ../../nbs/04_dataset_build.ipynb #2fd6465d
+# %% ../../nbs/04_dataset_build.ipynb #3c92fae4
 def resolve_mask_path(
     source_dir: Path,
     sample_id: str,
@@ -54,7 +54,7 @@ def resolve_mask_path(
     raise FileNotFoundError(f'No mask for {sample_id!r} in {masks} (tried {[c.name for c in candidates]})')
 
 
-# %% ../../nbs/04_dataset_build.ipynb #4eeb4970
+# %% ../../nbs/04_dataset_build.ipynb #bb7e8139
 def resolve_mask_paths(
     source_dir: Path,
     sample_id: str,
@@ -72,7 +72,7 @@ def resolve_mask_paths(
     return paths
 
 
-# %% ../../nbs/04_dataset_build.ipynb #f2f3f5c7
+# %% ../../nbs/04_dataset_build.ipynb #b44d3e01
 def resolve_channel_paths(
     source_dir: Path,
     sample_id: str,
@@ -102,7 +102,7 @@ def resolve_channel_paths(
     return paths
 
 
-# %% ../../nbs/04_dataset_build.ipynb #4a45a024
+# %% ../../nbs/04_dataset_build.ipynb #55337316
 def discover_samples(
     source_dir: str,
     n_channels: int = 1,
@@ -149,7 +149,7 @@ def discover_samples(
         raise FileNotFoundError(f'No samples with matching images+masks in {src}')
     return valid
 
-# %% ../../nbs/04_dataset_build.ipynb #818a0ec8
+# %% ../../nbs/04_dataset_build.ipynb #ac61225e
 def split_sources(
     sample_ids: List[str],   # all source ids
     val_fraction: float,     # fraction held out for validation
@@ -167,7 +167,7 @@ def split_sources(
     n_val = max(1, int(len(ids) * val_fraction))
     return ids[n_val:], ids[:n_val]
 
-# %% ../../nbs/04_dataset_build.ipynb #1d7dff5e
+# %% ../../nbs/04_dataset_build.ipynb #1a1d38e2
 def _process_sample(
     sid: str, split: str, source_dir: str, output_dir: str,
     cfg: PatchConfig, num_classes: int, n_channels: int, fit_rects: bool,
@@ -196,7 +196,7 @@ def _process_sample(
     return split, meta
 
 
-# %% ../../nbs/04_dataset_build.ipynb #6e1ca3cb
+# %% ../../nbs/04_dataset_build.ipynb #568f70fc
 def build_patch_dataset(
     source_dir: str,
     output_dir: str,
