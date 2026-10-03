@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-03
 
+Shared activation helper + tutorial (#25, first slice of map #23).
+
+- Extracted the sigmoid/softmax activation rule duplicated between `predict` and `predict_tiled` into one private helper `_activate(logits, task, activate)` (`nbs/11_inference.ipynb`); both public functions delegate to it (kept out of `__all__`), behaviour unchanged — notebook tests pin binary `C==1` sigmoid, multilabel sigmoid, multiclass softmax, and `activate=False` logits passthrough.
+- Added `tutorials/05_activation_semantics.ipynb` (executed, CPU-only synthetic data): walks the four pinned activation cases, softmax-vs-sigmoid channel semantics, the `C==1`-wins precedence, single-tile `predict_tiled` ≡ `predict` (to float32 rounding), tile batch-size invariance of the stitching, and bit-exact manual `_activate` reproduction. Note: on CPU the conv kernel itself may pick different algorithms per tile-batch size (~1e-7); the library's bit-identity test covers the single-tile case.
+
 FP32 ONNX export + batched tile inference + loader prefetch (#20, from spec in #14).
 
 - Added `predict_tiled` / `tile_starts` (`nbs/11_inference.ipynb`): batched sliding-window inference for large images — tiles forward in chunks of `inference_batch_size` and stitch with `stitching.gaussian_weight_map`. Clamped tile starts cover every pixel (last tile shifted back; images smaller than one tile are zero-padded up); batch size is a pure memory ↔ throughput knob — `inference_batch_size=1` is bit-identical to any larger value (test pins it). Activation semantics match `predict` (sigmoid binary/multilabel, softmax multiclass; `activate=False` logits passthrough); bad `overlap`/`inference_batch_size` raise clear `ValueError`s.
