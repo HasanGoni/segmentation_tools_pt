@@ -1,6 +1,6 @@
 ---
 name: production-deployment
-description: 'PLACEHOLDER skill — production deployment patterns (ONNX Runtime inference server, TorchScript, batch inference pipeline) are NOT fully implemented in segmentation_tools_pt yet. Use when a user asks "deploy the model", "inference server", "batch inference production", or "TorchScript". Explains options and where they would be added.'
+description: 'PLACEHOLDER skill — production deployment patterns (ONNX Runtime inference server, TorchScript, batch inference pipeline) are NOT implemented in segmentation_tools_pt yet (ONNX export itself is covered by the export-onnx skill). Use when a user asks "deploy the model", "inference server", "batch inference production", or "TorchScript". Explains options and where they would be added.'
 argument-hint: '[optional] target deployment environment'
 user-invocable: true
 disable-model-invocation: false

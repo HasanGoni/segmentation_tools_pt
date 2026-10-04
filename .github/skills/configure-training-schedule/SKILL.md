@@ -22,6 +22,7 @@ and compute.
 | `train.use_amp` | Mixed precision; keep `true` on GPU |
 | `train.save_every` | Periodic checkpoint cadence (`periodic_epNNN.pth`) |
 | `train.num_workers` | DataLoader workers; needs `TMPDIR=/tmp` on HPC |
+| `train.prefetch_factor` | Batches in flight per DataLoader worker; needs `num_workers > 0` (inert otherwise); `null` = torch default (2/worker) |
 | `train.device` | `cuda` / `cpu` |
 
 ## Resume

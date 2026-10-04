@@ -1,6 +1,6 @@
 ---
 name: continuous-integration
-description: 'PLACEHOLDER skill — continuous integration for segmentation_tools_pt (nbdev tests, lint, docs build) is NOT set up yet. Use when a user asks "CI", "GitLab CI", "GitHub Actions", "run tests automatically", or "nbdev_test in CI". Explains what a CI pipeline would do and where it would live.'
+description: 'PLACEHOLDER skill — continuous integration for segmentation_tools_pt (nbdev tests, lint, docs build) is NOT implemented in segmentation_tools_pt yet. Use when a user asks "CI", "GitLab CI", "GitHub Actions", "run tests automatically", or "nbdev_test in CI". Explains what a CI pipeline would do and where it would live.'
 argument-hint: '[optional] CI platform'
 user-invocable: true
 disable-model-invocation: false

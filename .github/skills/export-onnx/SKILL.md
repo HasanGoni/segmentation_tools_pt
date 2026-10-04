@@ -64,3 +64,14 @@ these via `resolve_hierarchy_pairs(cfg, class_names)` and the training `task`/`c
 - `src/segmentation_tools_pt/hydra_pipeline.py` — `resolve_hierarchy_pairs`.
 - `src/segmentation_tools_pt/inference.py` — `apply_hierarchy`.
 - Source notebooks: `nbs/13_export.ipynb`, `nbs/15_hydra_pipeline.ipynb`.
+
+## Validated encoders (FP32, issue #20)
+
+FP32 export is regression-smoke-tested for the curated encoders (`convnext_tiny`,
+`efficientnetv2_s` via `get_model(pretrained=False)`, dynamic batch, opset 18, `task`/`class_names`
+metadata) in `nbs/13_export.ipynb`; DINOv3 FP32 at `in_channels=1` multilabel 3-head was validated
+separately (see `configs/train_multilabel_3head.yaml`, which pairs export with
+`encoder_drift_check`). INT8 / TensorRT are not validated.
+
+Note: issue #26 plans to consolidate the export seam (`export_onnx` absorbing simplify/checker
+steps) — re-check the signature here if that issue lands.

@@ -1,6 +1,6 @@
 ---
 name: experiment-tracking
-description: 'PLACEHOLDER skill — experiment tracking (Weights & Biases, TensorBoard, MLflow) is NOT integrated into segmentation_tools_pt yet. Use when a user asks "log metrics to wandb", "TensorBoard", "experiment tracking", or "compare runs". Explains how to add a TrainCallback for it.'
+description: 'PLACEHOLDER skill — experiment tracking (Weights & Biases, TensorBoard, MLflow) is NOT implemented in segmentation_tools_pt yet. Use when a user asks "log metrics to wandb", "TensorBoard", "experiment tracking", or "compare runs". Explains how to add a TrainCallback for it.'
 argument-hint: '[optional] which tracker you want to use'
 user-invocable: true
 disable-model-invocation: false

@@ -125,6 +125,8 @@ segmentation_tools_pt/
 ├── tutorials/
 │   ├── 01_training_walkthrough.ipynb   # Step-by-step: data → patches → train → inspect
 │   ├── 02_next_steps.ipynb             # Multi-class, inference, ONNX deployment
+│   ├── 03_inference_and_top_losses.ipynb # predict / find_operating_threshold / show_top_losses walkthrough
+│   ├── 03_testing_skills.ipynb         # How to smoke-test the SKILL.md library (paired with .github/skills/skill-smoke-test)
 │   ├── 04_augmentation_playground.ipynb # Visualize batch augs (pick-one) + sample-level stack on your own images/masks
 │   └── 05_activation_semantics.ipynb   # Executed demo: the shared `_activate` rule behind `predict`/`predict_tiled` (issue #25)
 │
@@ -725,10 +727,18 @@ train:
 
 ### Export a trained model to ONNX manually
 
+`export_onnx` takes a loaded `nn.Module` (not a checkpoint path) — build the model with
+`get_model(...)`, load the state dict from `checkpoints/best.pth`, then export:
+
 ```python
 from segmentation_tools_pt.export import export_onnx
-export_onnx('checkpoints/best.pth', 'model.onnx', in_channels=1, num_classes=1)
+model.load_state_dict(
+    torch.load('checkpoints/best.pth', map_location='cpu', weights_only=False)['model'])
+export_onnx(model, 'model.onnx', in_channels=1, input_size=256)
 ```
+
+(The library loads its own checkpoints with `weights_only=False` throughout — see
+`train.py` / `model.py`; pass `weights_only=True` for untrusted files.)
 
 ### Large patch datasets (hundreds of thousands to millions of patches)
 
