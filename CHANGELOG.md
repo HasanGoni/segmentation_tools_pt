@@ -14,6 +14,7 @@ Tiled-inference consolidation (#27, second slice of map #23, per spec in #24).
 - Salvage 2 — Oct-1 reflect tile-edge padding folded in as `predict_tiled(..., padding_mode='zero' | 'reflect')` (default `'zero'`, bit-identical to before — parity pinned by a fixed-seed checksum test). `'reflect'` only matters when the image is smaller than one tile: `_reflect_idx`/`_reflect_pad` mirror-extend bottom/right for any pad size (unlike `F.pad`, which raises when pad ≥ dim), so real edge structure is not zero-darkened. Gaussian-weighted stays the only merge strategy (confidence-weighted deferred in the spec, not dropped).
 - Public API surface grows by exactly one parameter (`padding_mode`); batch-size invariance (`inference_batch_size=1` ≡ larger) stays bit-identical and under test.
 - `nbs/llms.txt` regenerated to list the current modules (it still named the retired ones); `__init__.py` docstring refreshed.
+- Test-harness gating: machine-specific demo cells in `nbs/09_model.ipynb` (DINOv3 hub download), `nbs/14_cli.ipynb` (placeholder repo paths, live `segpt_train()` demo, dry-run chain) and `nbs/003_patches_skill_test.ipynb` (placeholder dataset) marked `#| eval: false` so `nbdev-test` is fully green; code stays visible in the notebooks for manual runs. Un-hidden pre-existing rot fixed: `_build_job_script` now emits `uv sync --quiet` after entering the repo — matching its own test cell and the production `hpc/submit.sh`.
 
 ---
 
