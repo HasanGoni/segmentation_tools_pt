@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-08
+
+Tiled-inference consolidation (#27, second slice of map #23, per spec in #24).
+
+- `inference.predict_tiled` is now the **single** tiled-inference interface. The parallel Oct-1 cluster is deleted outright (no external callers existed, so retirement is deletion, not deprecation): `tiling_core` (`TileConfig`, `InferenceConfig`, `PaddingMode`, `MergeStrategy`, `PatchCoords`, `pad_to_divisible`, `unpad_image`), `tiling` (`TileProcessorONNX` + 3 tile-grid visualizers), `stitching` (`POSTPROCESSING_PRESETS`, `PatchAccumulator`, `TileMerger`, the known-broken `TileMergerONNX`, `build_postprocessing_pipeline`, merge visualizers), `model_wrapper` (ONNX-runtime wrappers), and `onnx_export` (`export_to_onnx` + helpers) — notebooks `nbs/00_tiling_core` … `04_onnx_export` removed with them.
+- Salvage 1 — `gaussian_weight_map` moved into `nbs/11_inference.ipynb` as private `_gaussian_weight_map` (single consumer: `predict_tiled`; `inference.py` no longer imports `stitching`).
+- Salvage 2 — Oct-1 reflect tile-edge padding folded in as `predict_tiled(..., padding_mode='zero' | 'reflect')` (default `'zero'`, bit-identical to before — parity pinned by a fixed-seed checksum test). `'reflect'` only matters when the image is smaller than one tile: `_reflect_idx`/`_reflect_pad` mirror-extend bottom/right for any pad size (unlike `F.pad`, which raises when pad ≥ dim), so real edge structure is not zero-darkened. Gaussian-weighted stays the only merge strategy (confidence-weighted deferred in the spec, not dropped).
+- Public API surface grows by exactly one parameter (`padding_mode`); batch-size invariance (`inference_batch_size=1` ≡ larger) stays bit-identical and under test.
+- `nbs/llms.txt` regenerated to list the current modules (it still named the retired ones); `__init__.py` docstring refreshed.
+
+---
+
 ## 2026-10-03
 
 Shared activation helper + tutorial (#25, first slice of map #23).

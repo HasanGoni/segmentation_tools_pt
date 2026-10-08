@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/inference.html.md"""
 __all__ = ['predict', 'decode', 'apply_hierarchy', 'apply_class_morph', 'find_operating_threshold', 'tile_starts',
            'predict_tiled']
 
-# %% ../../nbs/11_inference.ipynb #0ecb20dc
+# %% ../../nbs/11_inference.ipynb #6c5b152d
 import cv2
 
 from typing import Dict, List, Optional, Sequence
@@ -16,13 +16,10 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import torch
 
-from .stitching import gaussian_weight_map
-
-
-# %% ../../nbs/11_inference.ipynb #756673f1
+# %% ../../nbs/11_inference.ipynb #fc4c5bf9
 from segmentation_tools_pt.metrics import ObjectMetrics
 
-# %% ../../nbs/11_inference.ipynb #e3b49df3
+# %% ../../nbs/11_inference.ipynb #2a4be66d
 def _activate(
     logits: torch.Tensor,  # (B, C, H, W) raw model output
     task: str,             # 'binary' | 'multiclass' | 'multilabel'; None infers binary (C==1) or multiclass (C>1)
@@ -40,7 +37,7 @@ def _activate(
     if not activate: return logits
     return torch.sigmoid(logits) if (logits.shape[1] == 1 or task == 'multilabel') else torch.softmax(logits, dim=1)
 
-# %% ../../nbs/11_inference.ipynb #5147486c
+# %% ../../nbs/11_inference.ipynb #a397812d
 @torch.no_grad()
 def predict(
     model,                 # trained model returning (B, C, H, W) logits
@@ -66,7 +63,7 @@ def predict(
         preds.append(torch.rot90(pr, -k, dims=[2, 3]))
     return torch.stack(preds).mean(0).squeeze(0)
 
-# %% ../../nbs/11_inference.ipynb #ee96ae0d
+# %% ../../nbs/11_inference.ipynb #f6455615
 def decode(
     probs: torch.Tensor,     # (C, H, W) probabilities
     threshold=0.5,            # decision threshold: float (binary/multilabel-shared), or per-channel Sequence[float] for multilabel
@@ -95,7 +92,7 @@ def decode(
         return (probs[0] >= threshold).long()
     return probs.argmax(0)
 
-# %% ../../nbs/11_inference.ipynb #274d6ba3
+# %% ../../nbs/11_inference.ipynb #a47c1648
 def apply_hierarchy(
     masks: torch.Tensor,  # (C, H, W) or (B, C, H, W) decoded/binary multilabel masks
     pairs,                  # [(sub_idx, super_idx), ...], e.g. [(1, 0), (2, 0)] for (void,chip),(lifted,chip)
@@ -161,7 +158,7 @@ def apply_class_morph(
         items[i] = torch.from_numpy(m.astype(bool)).to(masks.dtype)
     return masks
 
-# %% ../../nbs/11_inference.ipynb #b04029fe
+# %% ../../nbs/11_inference.ipynb #0f1fed01
 @torch.no_grad()
 def find_operating_threshold(
     model,                          # trained binary model
@@ -202,7 +199,53 @@ def find_operating_threshold(
     return {'recommended_threshold': best['threshold'], 'achieved_recall': best['recall'],
             'achieved_precision': best['precision'], 'sweep': sweep}
 
-# %% ../../nbs/11_inference.ipynb #1bee825a
+# %% ../../nbs/11_inference.ipynb #49dda4a9
+def _reflect_idx(
+    n: int,   # size of the original axis
+    pad: int, # how much to extend the axis
+) -> torch.Tensor:
+    """Mirror indices into an axis of size `n` extended by `pad` (torch 'reflect' semantics).
+
+    Unlike `torch.nn.functional.pad(..., mode='reflect')` this works for any `pad`,
+    including larger than the axis itself, and degrades to self-replication on a 1-px axis.
+
+    Example:
+        >>> _reflect_idx(4, 3)
+        tensor([0, 1, 2, 3, 2, 1, 0])
+    """
+    if n == 1: return torch.zeros(n + pad, dtype=torch.long)  # a single pixel reflects to itself
+    period = 2 * (n - 1)  # torch 'reflect' excludes the edge pixel, so the mirror repeats with this period
+    m = torch.arange(n + pad) % period
+    return torch.where(m < n, m, period - m)
+
+def _reflect_pad(
+    x: torch.Tensor, # (B, C, H, W) tensor
+    ph: int,         # rows to add at the bottom
+    pw: int,         # columns to add at the right
+) -> torch.Tensor:
+    """Bottom/right reflect padding that works for any `ph`, `pw` (see `_reflect_idx`)."""
+    if not (ph or pw): return x
+    idx_r, idx_c = _reflect_idx(x.shape[-2], ph), _reflect_idx(x.shape[-1], pw)
+    return x[..., idx_r, :][..., :, idx_c]
+
+def _gaussian_weight_map(
+    patch_size: int,             # tile side (assumed square)
+    sigma_factor: float = 0.25,  # smaller -> sharper centre weighting
+    device: torch.device = None, # target device for the returned tensor
+) -> torch.Tensor:
+    """Build a 2-D Gaussian weight map `(patch_size, patch_size)` with max weight 1.0.
+
+    Example:
+        >>> w = _gaussian_weight_map(64); (w.shape, w.max())
+        (torch.Size([64, 64]), tensor(1.))
+    """
+    sigma = sigma_factor * patch_size
+    coords_1d = torch.arange(patch_size, dtype=torch.float32, device=device)
+    centre = (patch_size - 1) / 2.0
+    gauss_1d = torch.exp(-0.5 * ((coords_1d - centre) / sigma) ** 2)
+    weight_map = torch.outer(gauss_1d, gauss_1d)
+    return weight_map / weight_map.max()  # normalise to [0, 1]
+
 def tile_starts(
     extent: int,     # image extent along one axis (H or W), already padded up if smaller than tile_size
     tile_size: int,  # tile side along the same axis
@@ -227,20 +270,23 @@ def tile_starts(
 @torch.no_grad()
 def predict_tiled(
     model,                          # trained model returning (B, C, H, W) logits
-    image: torch.Tensor,            # a single (C, H, W) input — any H, W (smaller images are zero-padded up)
+    image: torch.Tensor,            # a single (C, H, W) input — any H, W (smaller images are padded up)
     device: torch.device,           # cpu or cuda
     tile_size: int = 256,           # tile side fed to the model
     overlap: int = 32,              # adjacent-tile overlap; Gaussian blending stitches tiles back
     inference_batch_size: int = 8,  # tiles per forward — raise for throughput, lower if OOM
     activate: bool = True,          # apply sigmoid/softmax to logits (same as `predict`)
     task: str = None,               # 'binary' | 'multiclass' | 'multilabel'; None infers like `predict`
+    padding_mode: str = 'zero',     # 'zero' (default, ONNX-matching) or 'reflect' for images smaller than a tile
 ) -> torch.Tensor:
     """Return `(C, H, W)` probabilities for a large image via batched sliding-window tiles.
 
     Tiles are forwarded in chunks of `inference_batch_size` (the `inference.inference_batch_size`
     config knob) and stitched with Gaussian-weighted blending. `inference_batch_size=1` gives
     bit-identical output to any larger value — the knob trades GPU memory against throughput
-    only, never accuracy. Activation semantics match `predict`.
+    only, never accuracy. Activation semantics match `predict`. `padding_mode` only matters when
+    the image is smaller than one tile: 'zero' (default) keeps ONNX-export semantics, 'reflect'
+    mirror-extends the edge so real structure near the border is not darkened.
 
     Example:
         >>> prob = predict_tiled(model, torch.rand(1, 1152, 1632), dev, tile_size=256, overlap=32)
@@ -248,18 +294,21 @@ def predict_tiled(
     """
     if inference_batch_size < 1:
         raise ValueError(f'inference_batch_size must be >= 1, got {inference_batch_size}')
+    if padding_mode not in ('zero', 'reflect'):
+        raise ValueError(f"padding_mode must be 'zero' or 'reflect', got {padding_mode!r}")
     model.eval()
     x = image.unsqueeze(0).to(device)
     H, W = x.shape[-2], x.shape[-1]
     ph, pw = max(0, tile_size - H), max(0, tile_size - W)
-    if ph or pw:
-        x = torch.nn.functional.pad(x, (0, pw, 0, ph), mode='constant', value=0)
+    if ph or pw:  # image smaller than a tile
+        x = _reflect_pad(x, ph, pw) if padding_mode == 'reflect' \
+            else torch.nn.functional.pad(x, (0, pw, 0, ph), mode='constant', value=0)
     Hp, Wp = x.shape[-2], x.shape[-1]
     coords = [(y, xx) for y in tile_starts(Hp, tile_size, overlap)
               for xx in tile_starts(Wp, tile_size, overlap)]  # row-major, fixed order
     tiles = torch.stack([x[0, :, y:y + tile_size, xx:xx + tile_size] for y, xx in coords])  # (N, C, ts, ts)
 
-    wmap = gaussian_weight_map(tile_size, device=x.device)
+    wmap = _gaussian_weight_map(tile_size, device=x.device)
     acc, wsum = None, x.new_zeros(1, Hp, Wp)
     for i in range(0, len(coords), inference_batch_size):
         probs = _activate(model(tiles[i:i + inference_batch_size]), task, activate)

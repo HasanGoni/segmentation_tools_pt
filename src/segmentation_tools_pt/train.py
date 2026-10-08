@@ -10,7 +10,7 @@ __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverla
            'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch', 'apply_mosaic_batch',
            'apply_copy_paste_batch', 'apply_batch_augs', 'train']
 
-# %% ../../nbs/10_train.ipynb #5183c65b
+# %% ../../nbs/10_train.ipynb #3a6c48ed
 import hashlib
 import json
 import random
@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #d646dd26
+# %% ../../nbs/10_train.ipynb #f78f7537
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
 from segmentation_tools_pt.metrics import SegMetrics
@@ -34,7 +34,7 @@ from segmentation_tools_pt.visualize import (
 )
 
 
-# %% ../../nbs/10_train.ipynb #6841b2cb
+# %% ../../nbs/10_train.ipynb #b3d7a292
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -63,7 +63,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #fa427e0d
+# %% ../../nbs/10_train.ipynb #6a077081
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -82,7 +82,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #48957262
+# %% ../../nbs/10_train.ipynb #493bba9b
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -430,7 +430,7 @@ class EncoderDriftCheck(TrainCallback):
         self.before = None
 
 
-# %% ../../nbs/10_train.ipynb #c31b7885
+# %% ../../nbs/10_train.ipynb #8d672ba7
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -449,7 +449,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #650ca5c7
+# %% ../../nbs/10_train.ipynb #639a351b
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -506,7 +506,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #68ed31e1
+# %% ../../nbs/10_train.ipynb #0f898f7a
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -547,7 +547,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #9f82c8b8
+# %% ../../nbs/10_train.ipynb #9ca29231
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -572,7 +572,7 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #5a0b2d66
+# %% ../../nbs/10_train.ipynb #6944bf94
 _BATCH_AUG_ORDER = ('mosaic', 'mixup', 'cutmix', 'copy_paste')
 
 def _perm_from_rng(rng, B: int, device) -> torch.Tensor:
@@ -683,7 +683,7 @@ def apply_batch_augs(
     images, targets = fn(images, targets, rng=rng)
     return images, targets, name
 
-# %% ../../nbs/10_train.ipynb #5f6d923b
+# %% ../../nbs/10_train.ipynb #7cf37ae7
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
