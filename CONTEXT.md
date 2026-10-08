@@ -47,3 +47,19 @@ _Avoid_: stacking MixUp then CutMix in the same step
 **Class-targeted morph postprocess**:
 Inference/eval-only classical cleanup (morphological opening + connected-component min-area) applied to one user-named class channel looked up in `data.class_names`, gated by a config master switch (default off). Not applied to loss or raw training metrics; product recipes (e.g. `class_name: void`) opt in via YAML.
 _Avoid_: Void-head postprocess (as library vocabulary), train-time morph, whole-mask stitching presets alone
+
+**Review report**:
+The single self-contained HTML page for checking the visual result of a ticket or evaluation run (images, metrics, gates) without starting a kernel. Evaluation and embedding work add sections to it; they do not build their own pages.
+_Avoid_: dashboard, experiment tracker, notebook output
+
+**Gate**:
+A pass/fail rule on one named metric (for example `dice_min: {void: 0.85}`), read from a gates file and shared by the review report and the run-to-run regression check. A gate whose metric is missing fails.
+_Avoid_: threshold (that means the decision threshold on probabilities), check
+
+**Section**:
+One block of a review report, produced by a registered function that returns HTML plus flat metrics.
+_Avoid_: tab, panel, plugin page
+
+**Feedback item**:
+One click-and-comment on a review report, stored as JSON with coordinates in original image pixels (not thumbnail pixels), so the agent can fix exactly that spot.
+_Avoid_: annotation, label, screenshot note
