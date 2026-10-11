@@ -240,6 +240,7 @@ def main(cfg: DictConfig) -> None:
     pred_cfg = mon.get('pred_overlays', {})
     ea_cfg = mon.get('error_analysis', {})
     drift_cfg = mon.get('encoder_drift_check', {})
+    ml_cfg = mon.get('metrics_log', {})
     hist_range = act_cfg.get('hist_range', [0, 10])
     callbacks = build_default_callbacks(
         checkpoint_dir=str(checkpoint_dir),
@@ -306,6 +307,9 @@ def main(cfg: DictConfig) -> None:
         seed=run_seed,
         callbacks=callbacks or None,
         task=task,
+        log_per_class=bool(ml_cfg.get('per_class', True)),
+        console_per_class=bool(ml_cfg.get('console_per_class', False)),
+        metrics_csv=bool(ml_cfg.get('csv', True)),
         **mask_cfg,
     )
 

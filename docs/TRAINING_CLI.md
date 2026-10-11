@@ -232,7 +232,7 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 | `loss` | Tversky/Dice/boundary weights + **phase schedule** |
 | `metrics` | Threshold, which metric saves `best.pth` |
 | `augment` | Per-image + batch-level augmentations |
-| `monitoring` | Activation stats, pred overlays, opt-in `error_analysis` |
+| `monitoring` | Per-epoch `metrics_log`, activation stats, pred overlays, opt-in `error_analysis` |
 | `export` | ONNX export after training |
 | `hpc` | GPU job defaults |
 
@@ -416,7 +416,8 @@ outputs/2026-06-02/15-30-45/
 ├── checkpoints/
 │   ├── best.pth
 │   ├── latest.pth
-│   ├── history.json
+│   ├── history.json         # per-epoch train_*/val_* loss + metrics (+ per-class IoU)
+│   ├── metrics.csv          # same rows as history.json, flat, open while training runs
 │   ├── error_analysis/      # if monitoring.error_analysis.enabled: true
 │   │   ├── train_top12.jpg  # worst samples per split (4-col: image | GT | pred | FN/FP diff)
 │   │   ├── val_top12.jpg    # multilabel: one per class, val_top12_chip.jpg ...
@@ -490,3 +491,21 @@ No need to copy the library into your project — only the config and data paths
 | Direct mode OOM | Switch to `patch_mode: true` or reduce `train.crop_size` / `train.batch_size` |
 
 Interactive walkthrough with synthetic data: [tutorials/01_training_walkthrough.ipynb](../tutorials/01_training_walkthrough.ipynb).
+
+## Per-epoch train vs validation metrics
+
+Every epoch writes **separate train and validation** numbers to `history.json`, `metrics.csv` and the console:
+`train_loss`, `val_loss`, `train_iou`/`val_iou` (also `dice`, `precision`, `recall`) and, per class,
+`train_iou_<class>` / `val_iou_<class>`. **Background is never listed or averaged**: in `multiclass`
+label 0 is skipped; `binary` has one foreground channel (`foreground`, or the first `class_names` entry);
+every `multilabel` head is a foreground class. Class names come from `class_names` (indexed by label id).
+
+```yaml
+monitoring:
+  metrics_log:
+    per_class: true           # per-class IoU columns (default on)
+    console_per_class: false  # also print per-class val IoU on the epoch line
+    csv: true                 # metrics.csv, rewritten from history so resume never duplicates rows
+```
+
+Quick look while training: `column -s, -t < checkpoints/metrics.csv | less -S`.
