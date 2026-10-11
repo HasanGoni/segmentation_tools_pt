@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-11
+
+Per-epoch train vs validation metrics with per-class IoU (#58).
+
+- Added `flatten_epoch_metrics` in `nbs/10_train.ipynb`: `train_*` / `val_*` loss and metrics plus `train_iou_<class>` / `val_iou_<class>`; background (multiclass label 0) is never listed.
+- `train_one_epoch` / `validate` now also return `train_per_class` / `per_class`; `history.json` gains `train_iou`, `train_dice`, `train_precision`, `train_recall`, `val_precision` and the per-class keys (existing keys kept).
+- New `metrics.csv` beside `history.json`, rewritten from history each epoch (resume-safe). Console line shows `train_iou` next to `val_iou`; `console_per_class` adds per-class val IoU.
+- Config: `monitoring.metrics_log.{per_class,console_per_class,csv}` in `configs/train.yaml` / `train_example.yaml`, wired in `scripts/train.py`; defaults preserve behaviour except the new columns.
+
+---
+
 ## 2026-10-08
 
 Tiled-inference consolidation (#27, second slice of map #23, per spec in #24).

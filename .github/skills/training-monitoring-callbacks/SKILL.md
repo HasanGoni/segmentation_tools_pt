@@ -38,6 +38,19 @@ verify the encoder weights after training: `expect_frozen: null` derives from `t
 DINOv3 runs — a frozen encoder must be bit-identical since AdamW never updates params without
 grads); `false` is report-only (per-layer cosine similarity, worst layers first).
 
+## Per-epoch train vs val metrics (`monitoring.metrics_log`, issue #58)
+
+Not a callback — always on. Each epoch `history.json` and `metrics.csv` (in `checkpoint_dir`) hold
+`train_loss`, `val_loss`, `train_iou`/`val_iou` (+ dice, precision, recall) and per-class
+`train_iou_<class>` / `val_iou_<class>`. Background is never listed (multiclass label 0 is skipped).
+Class names come from `class_names`. To see the current metrics while training runs:
+`column -s, -t < checkpoints/metrics.csv | less -S`.
+
+```yaml
+monitoring:
+  metrics_log: {per_class: true, console_per_class: false, csv: true}
+```
+
 ## Custom callbacks (from a notebook, not the CLI)
 
 Subclass `TrainCallback`, override only the hooks you need, and pass `callbacks=[...]` to `train()`.

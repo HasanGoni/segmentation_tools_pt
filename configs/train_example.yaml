@@ -104,6 +104,10 @@ postprocess:                       # inference/eval decode only — never applie
     min_area: 16                   # drop connected components smaller than this many pixels (1 = keep all)
 
 monitoring:
+  metrics_log:
+    per_class: true       # train_iou_<class> / val_iou_<class> in history.json + metrics.csv (foreground only, background never listed)
+    console_per_class: false  # also print per-class val IoU on each epoch line
+    csv: true             # write metrics.csv next to history.json every epoch
   activation_stats:
     enabled: true
     every: 1

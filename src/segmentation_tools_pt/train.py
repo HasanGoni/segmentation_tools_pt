@@ -6,11 +6,12 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/train.html.md"""
 
 # %% auto #0
 __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverlayCallback', 'build_default_callbacks',
-           'ErrorAnalysisCallback', 'EncoderDriftCheck', 'train_one_epoch', 'validate', 'save_checkpoint',
-           'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch', 'apply_mosaic_batch',
-           'apply_copy_paste_batch', 'apply_batch_augs', 'train']
+           'ErrorAnalysisCallback', 'EncoderDriftCheck', 'flatten_epoch_metrics', 'train_one_epoch', 'validate',
+           'save_checkpoint', 'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch',
+           'apply_mosaic_batch', 'apply_copy_paste_batch', 'apply_batch_augs', 'train']
 
-# %% ../../nbs/10_train.ipynb #3a6c48ed
+# %% ../../nbs/10_train.ipynb #81c3b971
+import csv
 import hashlib
 import json
 import random
@@ -23,7 +24,7 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #f78f7537
+# %% ../../nbs/10_train.ipynb #655c09ba
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
 from segmentation_tools_pt.metrics import SegMetrics
@@ -34,7 +35,7 @@ from segmentation_tools_pt.visualize import (
 )
 
 
-# %% ../../nbs/10_train.ipynb #b3d7a292
+# %% ../../nbs/10_train.ipynb #5e9ca94c
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -63,7 +64,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #6a077081
+# %% ../../nbs/10_train.ipynb #6ecc4315
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -82,7 +83,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #493bba9b
+# %% ../../nbs/10_train.ipynb #ebe235e6
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -430,7 +431,7 @@ class EncoderDriftCheck(TrainCallback):
         self.before = None
 
 
-# %% ../../nbs/10_train.ipynb #8d672ba7
+# %% ../../nbs/10_train.ipynb #706558c4
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -449,7 +450,37 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #639a351b
+# %% ../../nbs/10_train.ipynb #81c750c7
+def flatten_epoch_metrics(
+    metrics: Dict,                                    # `SegMetrics.compute()` output (with `per_class`)
+    prefix: str,                                      # 'train' or 'val'
+    task: str,                                        # 'binary' | 'multiclass' | 'multilabel'
+    class_names: Optional[Sequence[str]] = None,      # indexed by label id (binary: first name); falls back to `class<id>` / `foreground`
+    per_class: bool = True,                           # also emit `{prefix}_iou_<class>`
+) -> Dict[str, float]:
+    """Flatten one split's metrics to `{prefix}_<metric>` keys; background is never a class entry."""
+    out = {f'{prefix}_{k}': float(metrics[k]) for k in ('iou', 'dice', 'precision', 'recall')}
+    if per_class:
+        for label, scores in metrics['per_class'].items():
+            if task == 'multiclass' and label == 0:
+                continue
+            idx = 0 if task == 'binary' else label  # binary has one foreground channel (label 1) -> first name
+            name = class_names[idx] if class_names and idx < len(class_names) else ('foreground' if task == 'binary' else f'class{label}')
+            out[f'{prefix}_iou_{name}'] = float(scores['iou'])
+    return out
+
+def _write_metrics_csv(
+    history: List[dict],  # per-epoch log records
+    path: Path,           # destination `metrics.csv`
+) -> None:
+    "Rewrite `metrics.csv` from the full history, so resume never duplicates rows."
+    cols = list(dict.fromkeys(k for row in history for k in row))
+    with open(path, 'w', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        w.writerows(history)
+
+# %% ../../nbs/10_train.ipynb #cf2afc29
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -465,7 +496,7 @@ def train_one_epoch(
     metrics_threshold=0.5,             # float, or per-channel Sequence[float] for task='multilabel'
     batch_augs: Optional[dict] = None, # {'mosaic','mixup','cutmix','copy_paste'}: probs; None = off
 ) -> Dict[str, float]:
-    """Train for one epoch; return averaged losses and `train_*` metrics."""
+    """Train for one epoch; return averaged losses, `train_*` metrics and `train_per_class`."""
     model.train()
     running = {'loss': 0., 'loss_tversky': 0., 'loss_dice': 0., 'loss_boundary': 0.}
     metrics = SegMetrics(num_classes=num_classes, task=task, threshold=metrics_threshold)
@@ -502,11 +533,13 @@ def train_one_epoch(
         metrics.update(logits.detach(), targets)
     n = len(loader)
     out = {k: v / n for k, v in running.items()}
-    out.update({f'train_{k}': v for k, v in metrics.compute().items() if k != 'per_class'})
+    res = metrics.compute()
+    out.update({f'train_{k}': v for k, v in res.items() if k != 'per_class'})
+    out['train_per_class'] = res['per_class']
     return out
 
 
-# %% ../../nbs/10_train.ipynb #0f898f7a
+# %% ../../nbs/10_train.ipynb #3b9749c6
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -519,7 +552,7 @@ def validate(
     task: str = None,                  # 'binary' | 'multiclass' | 'multilabel'; None infers from num_classes
     metrics_threshold=0.5,             # float, or per-channel Sequence[float] for task='multilabel'
 ) -> Dict[str, float]:
-    """Run validation; return overlap metrics plus `val_loss`."""
+    """Run validation; return overlap metrics, `per_class` scores and `val_loss`."""
     model.eval()
     _call_callbacks(callbacks, 'on_val_begin', state)
     metrics = SegMetrics(num_classes=num_classes, task=task, threshold=metrics_threshold)
@@ -539,7 +572,9 @@ def validate(
             state.loss_dict = {k: float(v) for k, v in ld.items()}
         _call_callbacks(callbacks, 'on_val_batch_end', state)
         metrics.update(logits, targets)
-    res = {k: v for k, v in metrics.compute().items() if k != 'per_class'}
+    computed = metrics.compute()
+    res = {k: v for k, v in computed.items() if k != 'per_class'}
+    res['per_class'] = computed['per_class']
     res['val_loss'] = running / len(loader)
     if state is not None:
         state.val_metrics = res
@@ -547,7 +582,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #9ca29231
+# %% ../../nbs/10_train.ipynb #1f95158c
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -572,7 +607,7 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #6944bf94
+# %% ../../nbs/10_train.ipynb #43126936
 _BATCH_AUG_ORDER = ('mosaic', 'mixup', 'cutmix', 'copy_paste')
 
 def _perm_from_rng(rng, B: int, device) -> torch.Tensor:
@@ -683,7 +718,7 @@ def apply_batch_augs(
     images, targets = fn(images, targets, rng=rng)
     return images, targets, name
 
-# %% ../../nbs/10_train.ipynb #7cf37ae7
+# %% ../../nbs/10_train.ipynb #05836f72
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
@@ -722,7 +757,10 @@ def train(
     task: str = None,                              # 'binary' | 'multiclass' | 'multilabel'; None infers from num_classes
     mask_mode: str = 'single',                     # 'single' | 'stacked' | 'per_class_files' (patch-mode dataset only)
     mask_channels: Optional[int] = None,           # K, required for mask_mode='stacked'
-    class_names: Optional[Sequence[str]] = None,   # K class name suffixes, required for mask_mode='per_class_files'
+    class_names: Optional[Sequence[str]] = None,   # K class name suffixes, required for mask_mode='per_class_files'; also labels per-class IoU
+    log_per_class: bool = True,                    # add `train_iou_<class>` / `val_iou_<class>` (foreground only) to history + metrics.csv
+    console_per_class: bool = False,               # also print per-class val IoU on the epoch line
+    metrics_csv: bool = True,                      # write `metrics.csv` beside history.json each epoch
 ) -> list:
     """Resumable training loop with configurable loss phases; returns per-epoch history."""
     from torch.optim import AdamW
@@ -833,22 +871,29 @@ def train(
             task=task, metrics_threshold=metrics_threshold,
         )
         scheduler.step()
+        _task = task or ('binary' if num_classes == 1 else 'multiclass')
+        tr_flat = flatten_epoch_metrics({**{k[6:]: v for k, v in tr.items() if k.startswith('train_') and k != 'train_per_class'},
+                                         'per_class': tr['train_per_class']}, 'train', _task, class_names, log_per_class)
+        va_flat = flatten_epoch_metrics(va, 'val', _task, class_names, log_per_class)
         log = dict(epoch=epoch, train_loss=tr['loss'], val_loss=va['val_loss'],
-                   val_iou=va['iou'], val_dice=va['dice'], val_recall=va['recall'],
-                   lr=scheduler.get_last_lr()[0])
+                   **tr_flat, **va_flat, lr=scheduler.get_last_lr()[0])
         history.append(log)
         (Path(checkpoint_dir) / 'history.json').write_text(json.dumps(history, indent=2))
+        if metrics_csv:
+            _write_metrics_csv(history, Path(checkpoint_dir) / 'metrics.csv')
         args = (epoch, model, optimizer, scheduler, scaler)
         is_best = va[best_metric] > best_score
         state.is_best = is_best
         print(
             f"epoch {epoch+1:03d}/{num_epochs}"
-            f"  train={tr['loss']:.4f}"
-            f"  val={va['val_loss']:.4f}"
-            f"  iou={va['iou']:.4f}"
-            f"  dice={va['dice']:.4f}"
-            f"  recall={va['recall']:.4f}"
+            f"  train_loss={tr['loss']:.4f}"
+            f"  val_loss={va['val_loss']:.4f}"
+            f"  train_iou={log['train_iou']:.4f}"
+            f"  val_iou={va['iou']:.4f}"
+            f"  val_dice={va['dice']:.4f}"
+            f"  val_recall={va['recall']:.4f}"
             f"  lr={scheduler.get_last_lr()[0]:.2e}"
+            + ("".join(f"  {k}={v:.4f}" for k, v in va_flat.items() if k.startswith('val_iou_')) if console_per_class else "")
             + ("  *best*" if is_best else ""),
             flush=True,
         )
