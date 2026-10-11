@@ -10,7 +10,7 @@ __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverla
            'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch', 'apply_mosaic_batch',
            'apply_copy_paste_batch', 'apply_batch_augs', 'train']
 
-# %% ../../nbs/10_train.ipynb #004813cc
+# %% ../../nbs/10_train.ipynb #3a6c48ed
 import hashlib
 import json
 import random
@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #9120c502
+# %% ../../nbs/10_train.ipynb #f78f7537
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
 from segmentation_tools_pt.metrics import SegMetrics
@@ -34,7 +34,7 @@ from segmentation_tools_pt.visualize import (
 )
 
 
-# %% ../../nbs/10_train.ipynb #2b2caa6b
+# %% ../../nbs/10_train.ipynb #b3d7a292
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -63,7 +63,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #9370451b
+# %% ../../nbs/10_train.ipynb #6a077081
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -82,7 +82,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #8691ff39
+# %% ../../nbs/10_train.ipynb #493bba9b
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -430,7 +430,7 @@ class EncoderDriftCheck(TrainCallback):
         self.before = None
 
 
-# %% ../../nbs/10_train.ipynb #b5750c75
+# %% ../../nbs/10_train.ipynb #8d672ba7
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -449,7 +449,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #eaff0f32
+# %% ../../nbs/10_train.ipynb #639a351b
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -506,7 +506,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #c0b85f31
+# %% ../../nbs/10_train.ipynb #0f898f7a
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -547,7 +547,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #82bfa37f
+# %% ../../nbs/10_train.ipynb #9ca29231
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -572,7 +572,7 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #377866db
+# %% ../../nbs/10_train.ipynb #6944bf94
 _BATCH_AUG_ORDER = ('mosaic', 'mixup', 'cutmix', 'copy_paste')
 
 def _perm_from_rng(rng, B: int, device) -> torch.Tensor:
@@ -683,7 +683,7 @@ def apply_batch_augs(
     images, targets = fn(images, targets, rng=rng)
     return images, targets, name
 
-# %% ../../nbs/10_train.ipynb #ab0e1927
+# %% ../../nbs/10_train.ipynb #7cf37ae7
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
@@ -715,6 +715,7 @@ def train(
     boundary_blur: Optional[dict] = None,  # kwargs for BlurBoundaryZone (patch-mode training transform)
     batch_augs: Optional[dict] = None,     # batch-level aug probs {'mosaic','mixup','cutmix','copy_paste'}; None = off
     num_workers: int = 4,           # DataLoader worker processes
+    prefetch_factor: Optional[int] = None,  # batches kept in flight per worker (needs num_workers > 0); None = torch default
     resume_from: Optional[str] = None,  # explicit checkpoint path to resume from; None = use latest.pth
     seed: Optional[int] = None,     # run seed for reproducible sampling and worker RNGs
     callbacks: Optional[Sequence[TrainCallback]] = None,
@@ -727,7 +728,8 @@ def train(
     from torch.optim import AdamW
     from torch.optim.lr_scheduler import CosineAnnealingLR
     from torch.utils.data import DataLoader, WeightedRandomSampler
-    from segmentation_tools_pt.dataset import SegmentationDataset, _make_loader_generator, _seed_worker
+    from segmentation_tools_pt.dataset import (_make_loader_generator, _prefetch_kwargs,
+                                               SegmentationDataset, _seed_worker)
     from segmentation_tools_pt.transforms import get_train_transforms, get_val_transforms
 
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -763,6 +765,7 @@ def train(
         train_loader = DataLoader(
             train_ds, batch_size=batch_size, sampler=sampler,
             num_workers=num_workers, pin_memory=pin, drop_last=True,
+            **_prefetch_kwargs(num_workers, prefetch_factor),
             persistent_workers=(num_workers > 0),
             worker_init_fn=worker_init_fn,
             generator=_make_loader_generator(seed),
@@ -770,6 +773,7 @@ def train(
         val_loader = DataLoader(
             val_ds, batch_size=batch_size, shuffle=False,
             num_workers=num_workers, pin_memory=pin, drop_last=False,
+            **_prefetch_kwargs(num_workers, prefetch_factor),
             persistent_workers=(num_workers > 0),
             worker_init_fn=worker_init_fn,
             generator=_make_loader_generator(None if seed is None else seed + 1),

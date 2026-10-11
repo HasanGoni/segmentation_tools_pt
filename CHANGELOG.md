@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-08
+
+Tiled-inference consolidation (#27, second slice of map #23, per spec in #24).
+
+- `inference.predict_tiled` is now the **single** tiled-inference interface. The parallel Oct-1 cluster is deleted outright (no external callers existed, so retirement is deletion, not deprecation): `tiling_core` (`TileConfig`, `InferenceConfig`, `PaddingMode`, `MergeStrategy`, `PatchCoords`, `pad_to_divisible`, `unpad_image`), `tiling` (`TileProcessorONNX` + 3 tile-grid visualizers), `stitching` (`POSTPROCESSING_PRESETS`, `PatchAccumulator`, `TileMerger`, the known-broken `TileMergerONNX`, `build_postprocessing_pipeline`, merge visualizers), `model_wrapper` (ONNX-runtime wrappers), and `onnx_export` (`export_to_onnx` + helpers) — notebooks `nbs/00_tiling_core` … `04_onnx_export` removed with them.
+- Salvage 1 — `gaussian_weight_map` moved into `nbs/11_inference.ipynb` as private `_gaussian_weight_map` (single consumer: `predict_tiled`; `inference.py` no longer imports `stitching`).
+- Salvage 2 — Oct-1 reflect tile-edge padding folded in as `predict_tiled(..., padding_mode='zero' | 'reflect')` (default `'zero'`, bit-identical to before — parity pinned by a fixed-seed checksum test). `'reflect'` only matters when the image is smaller than one tile: `_reflect_idx`/`_reflect_pad` mirror-extend bottom/right for any pad size (unlike `F.pad`, which raises when pad ≥ dim), so real edge structure is not zero-darkened. Gaussian-weighted stays the only merge strategy (confidence-weighted deferred in the spec, not dropped).
+- Public API surface grows by exactly one parameter (`padding_mode`); batch-size invariance (`inference_batch_size=1` ≡ larger) stays bit-identical and under test.
+- `nbs/llms.txt` regenerated to list the current modules (it still named the retired ones); `__init__.py` docstring refreshed.
+- Test-harness gating: machine-specific demo cells in `nbs/09_model.ipynb` (DINOv3 hub download), `nbs/14_cli.ipynb` (placeholder repo paths, live `segpt_train()` demo, dry-run chain) and `nbs/003_patches_skill_test.ipynb` (placeholder dataset) marked `#| eval: false` so `nbdev-test` is fully green; code stays visible in the notebooks for manual runs. Un-hidden pre-existing rot fixed: `_build_job_script` now emits `uv sync --quiet` after entering the repo — matching its own test cell and the production `hpc/submit.sh`.
+
+---
+
+## 2026-10-03
+
+Shared activation helper + tutorial (#25, first slice of map #23).
+
+- Extracted the sigmoid/softmax activation rule duplicated between `predict` and `predict_tiled` into one private helper `_activate(logits, task, activate)` (`nbs/11_inference.ipynb`); both public functions delegate to it (kept out of `__all__`), behaviour unchanged — notebook tests pin binary `C==1` sigmoid, multilabel sigmoid, multiclass softmax, and `activate=False` logits passthrough.
+- Added `tutorials/05_activation_semantics.ipynb` (executed, CPU-only synthetic data): walks the four pinned activation cases, softmax-vs-sigmoid channel semantics, the `C==1`-wins precedence, single-tile `predict_tiled` ≡ `predict` (to float32 rounding), tile batch-size invariance of the stitching, and bit-exact manual `_activate` reproduction. Note: on CPU the conv kernel itself may pick different algorithms per tile-batch size (~1e-7); the library's bit-identity test covers the single-tile case.
+
+FP32 ONNX export + batched tile inference + loader prefetch (#20, from spec in #14).
+
+- Added `predict_tiled` / `tile_starts` (`nbs/11_inference.ipynb`): batched sliding-window inference for large images — tiles forward in chunks of `inference_batch_size` and stitch with `stitching.gaussian_weight_map`. Clamped tile starts cover every pixel (last tile shifted back; images smaller than one tile are zero-padded up); batch size is a pure memory ↔ throughput knob — `inference_batch_size=1` is bit-identical to any larger value (test pins it). Activation semantics match `predict` (sigmoid binary/multilabel, softmax multiclass; `activate=False` logits passthrough); bad `overlap`/`inference_batch_size` raise clear `ValueError`s.
+- Added `resolve_inference_cfg` (`nbs/15_hydra_pipeline.ipynb`): maps the `inference.*` config block (`tile_size: 256`, `overlap: 32`, `inference_batch_size: 8`, `prefetch_factor: null`) to `predict_tiled` knobs, validated before the GPU is touched; missing block → defaults. `prefetch_factor` targets loader-driven tiled-inference consumers — `predict_tiled` batches in-process and ignores it.
+- FP32 ONNX regression smoke (`nbs/13_export.ipynb`): curated encoders (`convnext_tiny`, `efficientnetv2_s`) build via `get_model(pretrained=False)` and export through `export_onnx` (dynamic batch, opset 18, `task`/`class_names` metadata) with ONNX Runtime output verified against PyTorch. FP32 only — no INT8, no TensorRT. DINOv3 FP32 export at `in_channels=1`, multilabel 3-head was validated separately (timm-hub weights pull is heavier than a smoke).
+- DataLoader prefetch knob (`nbs/06_dataset.ipynb` + `nbs/10_train.ipynb`): `prefetch_factor` threads through `build_dataloaders` / `build_direct_dataloaders` and `train()`'s internal patch-mode loaders via guarded `_prefetch_kwargs` (torch rejects the kwarg when `num_workers == 0`, so it is inert without workers). Config: `train.prefetch_factor` (default null = torch's 2 batches/worker), wired through `scripts/train.py`.
+- Config blocks `inference.*` + `train.prefetch_factor` added to `configs/train.yaml` / `train_example.yaml` / `train_multilabel_3head.yaml`; documented in `docs/TRAINING_CLI.md` (production tiled-inference section) and the `run-inference` skill.
+
 ## 2026-10-02
 
 Class-targeted morph postprocess (#19, from spec in #14).

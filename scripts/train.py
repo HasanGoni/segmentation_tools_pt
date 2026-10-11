@@ -302,6 +302,7 @@ def main(cfg: DictConfig) -> None:
         boundary_blur=boundary_blur,
         batch_augs=batch_augs,
         num_workers=cfg.train.num_workers,
+        prefetch_factor=cfg.train.get('prefetch_factor') or None,
         seed=run_seed,
         callbacks=callbacks or None,
         task=task,

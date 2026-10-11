@@ -76,4 +76,5 @@ cheap train-time augmentation variety.
 - `src/segmentation_tools_pt/patches.py` — `PatchConfig`, `grid_centers`, `extract_patches_from_sample`.
 - `src/segmentation_tools_pt/dataset_build.py` — `build_patch_dataset` (discover → fit rects → patch → split → stats).
 - `src/segmentation_tools_pt/dataset.py` — `SegmentationDataset` (patch) vs `DirectDataset` (direct).
+- `src/segmentation_tools_pt/inference.py` — `predict_tiled` / `tile_starts` for **inference-time** tiling of full-resolution images (the only tiled-inference interface; the old `tiling*`/`stitching` cluster was retired in issue #27).
 - Source notebooks: `nbs/03_patches.ipynb`, `nbs/04_dataset_build.ipynb`, `nbs/06_dataset.ipynb`.

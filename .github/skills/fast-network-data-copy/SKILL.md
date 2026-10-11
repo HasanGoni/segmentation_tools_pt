@@ -1,6 +1,6 @@
 ---
 name: fast-network-data-copy
-description: 'Copy large datasets (potentially millions of images/files) from a network server (e.g. a corporate network share) to a local Windows drive as fast as possible, using a parameterized robocopy wrapper. Use when a user needs to pull image datasets off a slow network share for faster local access, when tuning copy speed/thread counts, when the source/destination path needs to change (all via command-line parameters, no script edits), or when explaining/debugging scripts/copy_images_from_munich.ps1.'
+description: 'Copy large datasets (potentially millions of images/files) from a network server (e.g. a corporate network share) to a local Windows drive as fast as possible, using a parameterized robocopy wrapper. Use when a user needs to pull image datasets off a slow network share for faster local access, when tuning copy speed/thread counts, when the source/destination path needs to change (all via command-line parameters, no script edits), or when explaining/debugging the copy_images_from_munich.ps1 robocopy wrapper (kept outside this repo).'
 argument-hint: '[optional] -Source, -Destination, -FilePatterns, -ThreadCount, -ParallelJobs, -DryRun'
 user-invocable: true
 disable-model-invocation: false
@@ -13,9 +13,10 @@ as reasonably possible, using `robocopy` under the hood, with every path/pattern
 exposed as a plain command-line parameter — no script edits needed to point it at a new
 source or destination.
 
-Implemented in `scripts/copy_images_from_munich.ps1`. The filename references its original
-use case (Munich server image datasets) but the script itself is generic — `-Source` and
-`-Destination` accept any UNC path or local path.
+Implemented in `copy_images_from_munich.ps1` — **kept outside this repo** (not checked in;
+lives with your local scripts). The filename references its original use case (Munich
+server image datasets) but the script itself is generic — `-Source` and `-Destination`
+accept any UNC path or local path.
 
 ## When To Use
 
@@ -82,16 +83,16 @@ Never hand-edit the script to point it at a new path or dataset. Every knob is a
 
 ```powershell
 # Simple mode (default), overriding source/destination
-./scripts/copy_images_from_munich.ps1 -Source '\\server\share\some\path' -Destination 'D:\local\path'
+./copy_images_from_munich.ps1 -Source '\\server\share\some\path' -Destination 'D:\local\path'
 
 # Preview only, no copying
-./scripts/copy_images_from_munich.ps1 -Source '...' -Destination '...' -DryRun
+./copy_images_from_munich.ps1 -Source '...' -Destination '...' -DryRun
 
 # Different file types
-./scripts/copy_images_from_munich.ps1 -Source '...' -Destination '...' -FilePatterns '*.raw','*.npy'
+./copy_images_from_munich.ps1 -Source '...' -Destination '...' -FilePatterns '*.raw','*.npy'
 
 # Millions of files across many subfolders: parallel mode
-./scripts/copy_images_from_munich.ps1 -Source '...' -Destination '...' -ParallelJobs 6 -ThreadCount 12
+./copy_images_from_munich.ps1 -Source '...' -Destination '...' -ParallelJobs 6 -ThreadCount 12
 ```
 
 ## Validation Checklist

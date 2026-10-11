@@ -28,6 +28,7 @@ train:
   resume_from: null
   device: cuda
   num_workers: 4            # DataLoader workers — needs TMPDIR=/tmp on HPC
+  prefetch_factor: null     # batches kept in flight per worker (needs num_workers > 0); null = torch default (2)
 
 loss:
   alpha: 0.7
@@ -116,9 +117,15 @@ monitoring:
     expect_frozen: null   # null = derive from train.freeze_epochs == -1; true = raise if drifted; false = report only
 
 export:
-  onnx: false
+  onnx: false             # FP32 ONNX export (dynamic batch, opset 18, runtime-verified); no INT8/TensorRT
   opset: 18
   verify: true
+
+inference:                  # production tiled-inference knobs (`predict_tiled`, issue #20)
+  tile_size: 256            # tile side fed to the model
+  overlap: 32               # adjacent-tile overlap; Gaussian blending stitches tiles back
+  inference_batch_size: 8   # tiles per forward — raise for throughput, lower if OOM (results unchanged)
+  prefetch_factor: null     # loader-driven tiled inference only; predict_tiled batches in-process and ignores it
 
 hpc:
   job_name: segpt_train

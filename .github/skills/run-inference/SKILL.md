@@ -54,8 +54,31 @@ masks = apply_hierarchy(masks, pairs=hierarchy_pairs)    # e.g. [(1, 0), (2, 0)]
 `class_name` must exist in `data.class_names` or `resolve_class_morph_cfg` raises a clear
 ValueError; other channels pass through `apply_class_morph` untouched.
 
+## Batched tile inference for very large images (`predict_tiled`, issue #20)
+
+`predict` runs one view at a time — for full inspection images use `predict_tiled`:
+tiles are forwarded in chunks and stitched with Gaussian-weighted blending, with the
+same activation semantics as `predict`. Batch size is a pure memory ↔ throughput knob
+(batch 1 is bit-identical to any larger batch):
+
+```python
+from segmentation_tools_pt.hydra_pipeline import resolve_inference_cfg
+from segmentation_tools_pt.inference import predict_tiled
+
+knobs = resolve_inference_cfg(cfg)   # {'tile_size': 256, 'overlap': 32,
+                                     #  'inference_batch_size': 8, 'prefetch_factor': None}
+prob = predict_tiled(model, image, device, **knobs)   # (C, H, W) probabilities
+mask = (prob[0] >= 0.5).long()
+```
+
+Knobs live in the `inference:` config block (`tile_size`, `overlap`,
+`inference_batch_size`, `prefetch_factor`); `prefetch_factor` targets loader-driven
+tiled-inference consumers — `predict_tiled` batches tiles in-process and ignores it.
+Images smaller than one tile are zero-padded up; clamped tile starts cover every pixel.
+
 ## Library anchors
 
-- `src/segmentation_tools_pt/inference.py` — `predict` (sliding-window + blending).
+- `src/segmentation_tools_pt/inference.py` — `predict` (sliding-window + blending),
+  `predict_tiled` (batched tiles) and `tile_starts`.
 - `src/segmentation_tools_pt/visualize.py` — `overlay_mask` for inspecting results.
 - Source notebook: `nbs/11_inference.ipynb`.
