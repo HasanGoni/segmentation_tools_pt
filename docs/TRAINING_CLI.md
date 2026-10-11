@@ -349,6 +349,26 @@ ONNX export stays **FP32 only** (`export.onnx`, opset 18, dynamic batch axis,
 runtime-verified); curated encoders (`convnext_tiny`, `efficientnetv2_s`,
 `dinov3_vit_small`, …) export through the standard `get_model` path. No INT8, no TensorRT.
 
+### Visual review report (`review_report`, issue #50)
+
+One self-contained `report.html` for checking a model's result by eye, without starting a
+kernel: ground truth vs prediction vs errors for the worst / random / best samples, with layer
+toggles, a class selector and a per-class Dice/IoU table. Masks are exact SVG outlines, never
+JPEG; 16-bit images keep their raw values in `assets/<id>/full.png`.
+
+```python
+from segmentation_tools_pt.review_report import samples_from_dataset, build_report
+samples = samples_from_dataset(model, val_ds, device, class_names=['void'])   # one model pass
+build_report('T-123', 'reports/T-123', samples, seed=0, cfg=dict(n_worst=6, n_random=6, n_best=3))
+```
+
+Open `reports/T-123/report.html` in a browser. `report.json` next to it holds the pooled metrics
+(`dice.void`, `iou.mean`, …) and which samples were shown. The datasets read 8-bit grayscale, so
+pass `raw_image_fn=` (re-read the original file with `cv2.IMREAD_UNCHANGED`) to keep 16-bit
+values. Try it without data: `make_dummy_samples(12, task='multilabel', dtype='uint16')`.
+Click-to-comment feedback, gates and the summary text arrive with #51 / #52; evaluation and
+embedding work add their own sections to this same page (maps #28, #39, #48).
+
 ---
 
 ## 6. CLI overrides (Hydra)

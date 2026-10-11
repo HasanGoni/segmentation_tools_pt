@@ -51,7 +51,7 @@ Implementation contract: `docs/agents/nbdev-implementation-contract.md`.
 
 ```
 segmentation_tools_pt/
-├── nbs/          ← SOURCE OF TRUTH (edit here); 00_core … 15_hydra_pipeline notebooks → src/
+├── nbs/          ← SOURCE OF TRUTH (edit here); 00_core … 16_review_report notebooks → src/
 ├── src/segmentation_tools_pt/  ← AUTO-GENERATED (do not edit)
 ├── scripts/      # build.py (segpt-build), train.py (segpt-train) — Hydra entry points
 ├── configs/      # data_patch.yaml (shared base), build.yaml, train.yaml, *_example.yaml, model/ presets
@@ -66,7 +66,8 @@ segmentation_tools_pt/
 
 Notebook → module mapping: `00_core`, `01_channels`, `02_masks`, `03_patches`,
 `04_dataset_build`, `05_transforms`, `06_dataset`, `07_losses`, `08_metrics`, `09_model`,
-`10_train`, `11_inference`, `12_visualize`, `13_export`, `14_cli`, `15_hydra_pipeline` —
+`10_train`, `11_inference`, `12_visualize`, `13_export`, `14_cli`, `15_hydra_pipeline`,
+`16_review_report` —
 each notebook generates the correspondingly named module in `src/`.
 
 ---
@@ -90,6 +91,7 @@ each notebook generates the correspondingly named module in `src/`.
 | `export.py` | ONNX export + verification, task/class_names metadata |
 | `cli.py` | `segpt-build` / `segpt-train` / `segpt-submit` entry points |
 | `hydra_pipeline.py` | shared Hydra resolvers (batch augs, mask, inference, class-morph configs) |
+| `review_report.py` | single self-contained HTML review report (overlay section, `Sample`, section registry); other maps add sections, not renderers |
 
 **Gotchas and per-module detail** (dataset dict-return, `channel_names` mismatch, patch-cache
 naming, callback hooks table, monitoring outputs): `docs/agents/repo-guide.md`.
