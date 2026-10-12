@@ -264,7 +264,7 @@ loss:
 Off by default: no `weight` (or `0`) gives exactly the previous loss. Training fails early if the weight is `> 0` with
 a non-multilabel task or when no pair resolves (typo in a class name). This is a soft nudge; `apply_hierarchy` at
 inference still hard-clips. A/B it with `segpt-train configs/train_multilabel_3head.yaml train.hierarchy.weight=0.0`
-vs `=0.5` — hands-on walkthrough in `tutorials/06_hierarchy_loss.ipynb`.
+vs `=0.5` — hands-on walkthrough in `tutorials/06_hierarchy_loss.ipynb` (synthetic) and the real-data acceptance run in `tutorials/07_hierarchy_ab_real_data.ipynb`.
 
 ### Augmentations
 

@@ -54,7 +54,7 @@ Add `w_bce` to any phase dict when using BCE; phases without a key default that 
 Not a loss *choice* but an add-on: set `train.hierarchy.<sub>_subset_of_<super>: true` plus `train.hierarchy.weight: 0.5`
 (or `w_hierarchy` inside a phase dict). Default `0` = off. It only works with `train.task: multilabel` and fails early
 otherwise. To check it helps, A/B `train.hierarchy.weight=0.0` vs `0.5` on the same split/seed and compare the
-violation rate (`metrics.subset_violation_rate`) on raw predictions; see `tutorials/06_hierarchy_loss.ipynb`.
+violation rate (`metrics.subset_violation_rate`) on raw predictions; see `tutorials/06_hierarchy_loss.ipynb` (synthetic) and `tutorials/07_hierarchy_ab_real_data.ipynb` (real-data A/B).
 
 ## What this skill emits
 
