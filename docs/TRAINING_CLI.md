@@ -244,6 +244,28 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 `until_epoch` is exclusive (epoch 0..9 uses the first block if `until_epoch: 10`).
 Use `until_epoch: -1` on the last phase for “until end of training”.
 
+### Class-hierarchy loss (`lifted ⊂ chip`)
+
+For `task: multilabel`, name the nesting and give it a weight; the loss then penalises a sub-class predicted
+outside its super-class (`relu(p_sub - p_super)`), and `train_loss_hierarchy` appears in the epoch log and `metrics.csv`:
+
+```yaml
+train:
+  task: multilabel
+  hierarchy:
+    lifted_subset_of_chip: true   # which classes nest (names come from data.class_names)
+    weight: 0.5                   # 0 / missing = off (default); run-wide, phases may override
+loss:
+  phases:
+    - {until_epoch: 10, w_tversky: 0.6, w_dice: 0.4, w_boundary: 0.0, w_hierarchy: 0.0}  # optional per-phase weight
+    - {until_epoch: -1, w_tversky: 0.5, w_dice: 0.3, w_boundary: 0.2}                     # falls back to train.hierarchy.weight
+```
+
+Off by default: no `weight` (or `0`) gives exactly the previous loss. Training fails early if the weight is `> 0` with
+a non-multilabel task or when no pair resolves (typo in a class name). This is a soft nudge; `apply_hierarchy` at
+inference still hard-clips. A/B it with `segpt-train configs/train_multilabel_3head.yaml train.hierarchy.weight=0.0`
+vs `=0.5` — hands-on walkthrough in `tutorials/06_hierarchy_loss.ipynb`.
+
 ### Augmentations
 
 **Per-image** (Albumentations, YOLO26-style): `translate`, `scale`, `degrees`, `shear`, `perspective`, `fliplr`, `flipud`, `hsv_*`, `bgr`, `erasing`, …

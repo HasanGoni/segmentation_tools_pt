@@ -49,6 +49,13 @@ loss:
 
 Add `w_bce` to any phase dict when using BCE; phases without a key default that weight to 0.
 
+### Hierarchy term (multilabel, e.g. `lifted ⊂ chip`)
+
+Not a loss *choice* but an add-on: set `train.hierarchy.<sub>_subset_of_<super>: true` plus `train.hierarchy.weight: 0.5`
+(or `w_hierarchy` inside a phase dict). Default `0` = off. It only works with `train.task: multilabel` and fails early
+otherwise. To check it helps, A/B `train.hierarchy.weight=0.0` vs `0.5` on the same split/seed and compare the
+violation rate (`metrics.subset_violation_rate`) on raw predictions; see `tutorials/06_hierarchy_loss.ipynb`.
+
 ## What this skill emits
 
 - The `loss:` block for `configs/train.yaml`, matched to the interview.
@@ -57,5 +64,6 @@ Add `w_bce` to any phase dict when using BCE; phases without a key default that 
 ## Library anchors
 
 - `src/segmentation_tools_pt/losses.py` — `SegLoss`, `TverskyFocalLoss`, `DiceLoss`,
-  `BoundaryLoss`, `BCELoss`, `resolve_loss_weights` (reads `w_bce` via `phase.get('w_bce', 0.0)`).
+  `BoundaryLoss`, `BCELoss`, `resolve_loss_weights` (5-tuple; `w_bce` / `w_hierarchy` optional per phase, default 0),
+  `validate_hierarchy_loss`.
 - Source notebook: `nbs/07_losses.ipynb`.
