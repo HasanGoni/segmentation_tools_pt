@@ -6,16 +6,16 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/losses.html.md"""
 
 # %% auto #0
 __all__ = ['probs_and_targets', 'TverskyFocalLoss', 'DiceLoss', 'BoundaryLoss', 'BCELoss', 'ForeGroundAwareLoss',
-           'hierarchy_regularizer_loss', 'SegLoss', 'resolve_loss_weights']
+           'hierarchy_regularizer_loss', 'SegLoss', 'resolve_loss_weights', 'validate_hierarchy_loss']
 
-# %% ../../nbs/07_losses.ipynb #33550e5c
+# %% ../../nbs/07_losses.ipynb #2254d20b
 from typing import Dict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# %% ../../nbs/07_losses.ipynb #af9a9c75
+# %% ../../nbs/07_losses.ipynb #fc7d4d91
 def probs_and_targets(
     logits: torch.Tensor,    # (B, C, H, W) raw logits
     targets: torch.Tensor,   # (B, H, W) labels, or (B, C, H, W) float {0,1} for binary/multilabel, or one-hot
@@ -46,7 +46,7 @@ def probs_and_targets(
     onehot = F.one_hot(targets.long(), c).permute(0, 3, 1, 2).float()
     return probs, onehot
 
-# %% ../../nbs/07_losses.ipynb #af5eb3aa
+# %% ../../nbs/07_losses.ipynb #d45c4709
 class TverskyFocalLoss(nn.Module):
     """Per-class Tversky-focal loss for binary, multi-class, or multilabel segmentation.
 
@@ -77,7 +77,7 @@ class TverskyFocalLoss(nn.Module):
         tversky = (tp + self.smooth) / (tp + self.alpha * fn + self.beta * fp + self.smooth)
         return ((1.0 - tversky) ** (1.0 / self.gamma)).mean()
 
-# %% ../../nbs/07_losses.ipynb #34961527
+# %% ../../nbs/07_losses.ipynb #f8d4ebaf
 class DiceLoss(nn.Module):
     "Per-class soft Dice loss (binary, multi-class, or multilabel)."
 
@@ -93,7 +93,7 @@ class DiceLoss(nn.Module):
         dice = (2 * inter + self.smooth) / (p.sum(dims) + t.sum(dims) + self.smooth)
         return 1.0 - dice.mean()
 
-# %% ../../nbs/07_losses.ipynb #7d18f98b
+# %% ../../nbs/07_losses.ipynb #b18518ca
 class BoundaryLoss(nn.Module):
     "Boundary-weighted cross-entropy (binary, multi-class, or multilabel)."
 
@@ -129,7 +129,7 @@ class BoundaryLoss(nn.Module):
         fg = (labels > 0).float().unsqueeze(1)
         return (per_px * self._weight_map(fg)).mean()
 
-# %% ../../nbs/07_losses.ipynb #c6d8ecf4
+# %% ../../nbs/07_losses.ipynb #471373c5
 class BCELoss(nn.Module):
     """Plain binary cross-entropy for segmentation (binary, multi-class, or multilabel).
 
@@ -158,7 +158,7 @@ class BCELoss(nn.Module):
         return F.cross_entropy(logits, targets.long())
 
 
-# %% ../../nbs/07_losses.ipynb #0bb62fe5
+# %% ../../nbs/07_losses.ipynb #f80faf79
 class ForeGroundAwareLoss:
     
   def __init__(
@@ -202,7 +202,7 @@ class ForeGroundAwareLoss:
     loss = (w*l1).sum() / (w.sum() + 1e-8) # weighted average
     return loss
 
-# %% ../../nbs/07_losses.ipynb #8259367b
+# %% ../../nbs/07_losses.ipynb #b4ec9f22
 def hierarchy_regularizer_loss(
     probs: torch.Tensor,  # (B, C, H, W) sigmoid probabilities (task='multilabel')
     pairs,                 # [(sub_idx, super_idx), ...], e.g. [(1, 0), (2, 0)] for (void,chip),(lifted,chip)
@@ -213,7 +213,7 @@ def hierarchy_regularizer_loss(
     terms = [F.relu(probs[:, s] - probs[:, p]).mean() for s, p in pairs]
     return torch.stack(terms).mean()
 
-# %% ../../nbs/07_losses.ipynb #f6b15323
+# %% ../../nbs/07_losses.ipynb #98fe889a
 class SegLoss(nn.Module):
     """Weighted Tversky-focal + Dice + Boundary + BCE + hierarchy loss returning a breakdown dict.
 
@@ -279,23 +279,53 @@ class SegLoss(nn.Module):
         if w_hierarchy is not None:
             self.w_hierarchy = w_hierarchy
 
+# %% ../../nbs/07_losses.ipynb #c9719f0e
+def _phase_weights(phase, w_hierarchy):
+    return (float(phase['w_tversky']), float(phase['w_dice']), float(phase['w_boundary']),
+            float(phase.get('w_bce', 0.0)), float(phase.get('w_hierarchy', w_hierarchy)))
 
-#| export
 def resolve_loss_weights(
     epoch: int,
     phases,
+    w_hierarchy: float = 0.0,  # run-wide fallback for phases that do not set their own `w_hierarchy`
 ) -> tuple:
-    """Return `(w_tversky, w_dice, w_boundary, w_bce)` for `epoch` from a phase list.
+    """Return `(w_tversky, w_dice, w_boundary, w_bce, w_hierarchy)` for `epoch` from a phase list.
 
-    `w_bce` defaults to `0.0` when absent from a phase entry, so existing configs
-    that only specify `w_tversky/w_dice/w_boundary` continue to work unchanged.
+    `w_bce` and `w_hierarchy` are optional per phase: `w_bce` defaults to `0.0`, `w_hierarchy` to the
+    `w_hierarchy` argument (itself `0.0`), so configs that name neither behave exactly as before.
+    Feed the tuple to `SegLoss.set_weights(*weights)`.
     """
     for phase in phases:
         until = phase.get('until_epoch', -1)
         if until is None or until < 0 or epoch < until:
-            return (float(phase['w_tversky']), float(phase['w_dice']),
-                    float(phase['w_boundary']), float(phase.get('w_bce', 0.0)))
-    last = phases[-1]
-    return (float(last['w_tversky']), float(last['w_dice']),
-            float(last['w_boundary']), float(last.get('w_bce', 0.0)))
+            return _phase_weights(phase, w_hierarchy)
+    return _phase_weights(phases[-1], w_hierarchy)
 
+# %% ../../nbs/07_losses.ipynb #63573f9d
+def validate_hierarchy_loss(
+    task: str,                       # 'binary' | 'multiclass' | 'multilabel'
+    hierarchy_pairs,                 # [(sub_idx, super_idx), ...] or None
+    phases,                          # loss phase dicts (each may carry `w_hierarchy`)
+    w_hierarchy: float = 0.0,        # run-wide fallback weight
+    num_classes: int = None,         # when given, pair indices must be < num_classes
+) -> bool:
+    """Raise `ValueError` if the hierarchy loss is switched on but cannot work; return whether it is on.
+
+    Off (every weight `0`) is always valid, so default configs never hit these checks.
+    """
+    weights = [float(p.get('w_hierarchy', w_hierarchy)) for p in (phases or [])] or [float(w_hierarchy)]
+    if any(w < 0 for w in weights):
+        raise ValueError(f'w_hierarchy must be >= 0, got {min(weights)}')
+    if not any(w > 0 for w in weights):
+        return False
+    if task != 'multilabel':
+        raise ValueError(
+            f"w_hierarchy > 0 needs task='multilabel' (overlapping sigmoid channels), got task={task!r}. "
+            'Set train.task: multilabel or train.hierarchy.weight: 0.')
+    if not hierarchy_pairs:
+        raise ValueError(
+            'w_hierarchy > 0 but no hierarchy pairs were resolved. Add e.g. '
+            '`train.hierarchy.lifted_subset_of_chip: true` and make sure both names are in data.class_names.')
+    if num_classes is not None and any(max(s, p) >= num_classes for s, p in hierarchy_pairs):
+        raise ValueError(f'hierarchy_pairs {list(hierarchy_pairs)} index outside num_classes={num_classes}')
+    return True
