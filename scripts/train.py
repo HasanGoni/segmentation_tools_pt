@@ -30,6 +30,7 @@ from segmentation_tools_pt.hydra_pipeline import (
     resolve_boundary_blur_cfg,
     resolve_deterministic,
     resolve_hierarchy_pairs,
+    resolve_hierarchy_weight,
     resolve_mask_cfg,
     resolve_run_seed,
     resolve_task,
@@ -219,6 +220,10 @@ def main(cfg: DictConfig) -> None:
             f'  phase {i + 1}: until_epoch={ph["until_epoch"]}  '
             f'tversky={ph["w_tversky"]} dice={ph["w_dice"]} boundary={ph["w_boundary"]}'
         )
+    hierarchy_pairs = resolve_hierarchy_pairs(cfg, mask_cfg['class_names']) or None
+    w_hierarchy = resolve_hierarchy_weight(cfg)
+    if hierarchy_pairs and (w_hierarchy > 0 or any(ph.get('w_hierarchy', 0) > 0 for ph in loss_phases)):
+        print(f'Hierarchy loss: pairs={hierarchy_pairs}  weight={w_hierarchy} (per-phase w_hierarchy overrides)')
     print(f'Metrics: threshold={cfg.metrics.threshold}  best_metric={cfg.metrics.best_metric}')
     print(
         f'Augment: preset={cfg.augment.get("preset", "legacy")}  '
@@ -297,6 +302,8 @@ def main(cfg: DictConfig) -> None:
         loss_beta=cfg.loss.beta,
         loss_gamma=cfg.loss.gamma,
         loss_phases=loss_phases,
+        hierarchy_pairs=hierarchy_pairs,
+        w_hierarchy=w_hierarchy,
         metrics_threshold=_resolve_threshold(cfg),
         best_metric=cfg.metrics.best_metric,
         aug=None,

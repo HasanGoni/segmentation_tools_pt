@@ -56,6 +56,7 @@ train:
   deterministic: true
   hierarchy:
     lifted_subset_of_chip: true   # soft (hierarchy_regularizer_loss) + hard (apply_hierarchy) enforcement
+    weight: 0.5                   # hierarchy-loss weight (0 = off); a loss phase may set its own w_hierarchy. A/B: train.hierarchy.weight=0.0
 
 loss:
   alpha: 0.7
