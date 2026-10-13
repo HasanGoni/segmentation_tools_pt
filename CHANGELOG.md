@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-13
 
+Fix `_poster_masks` on multiclass ignore labels and multilabel label maps (#72).
+
+- New private `_one_hot` in `nbs/12_visualize.ipynb`: one-hot stacks are sized from the model's channel count and labels outside `[0, C)` (e.g. `255`) belong to no class instead of raising `IndexError`.
+- Pixels with an ignore label also carry no prediction, so the diff column does not paint the ignored border as false alarms.
+- A multilabel 2-D label map missing the top class now gives GT the same channel count as the prediction (was sized from the sample's own max label).
+
 Fix `rank_samples`, `rank_samples_per_class`, `compute_patch_losses` and `save_error_poster` side effects (#71).
 
 - New private `_eval_mode(model)` context manager in `nbs/12_visualize.ipynb`: the helpers restore each submodule's own train/eval flag (a frozen BatchNorm stays frozen), so calling them mid-training no longer leaves BatchNorm/Dropout in eval mode.

@@ -10,7 +10,7 @@ __all__ = ['DEFAULT_MULTILABEL_COLORS', 'show_pred', 'overlay_gt_only', 'overlay
            'show_top_losses', 'overlay_multilabel', 'show_pred_multilabel', 'save_multilabel_overlay_grid_jpeg',
            'rank_samples', 'rank_samples_per_class', 'save_error_poster']
 
-# %% ../../nbs/12_visualize.ipynb #6d7edef5
+# %% ../../nbs/12_visualize.ipynb #ba5e0a75
 import math
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -24,7 +24,7 @@ from .inference import predict, decode
 from .losses import SegLoss
 from .metrics import SegMetrics
 
-# %% ../../nbs/12_visualize.ipynb #7f8b0996
+# %% ../../nbs/12_visualize.ipynb #a0b8d548
 def _to_numpy(x):
     "Detach a tensor to numpy; pass arrays through."
     return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else np.asarray(x)
@@ -58,7 +58,7 @@ def show_pred(
                        mpatches.Patch(color=(1, 0, 1), label='Both')], loc='upper right', fontsize=7)
     return ax
 
-# %% ../../nbs/12_visualize.ipynb #5712f5c9
+# %% ../../nbs/12_visualize.ipynb #c1898c9a
 def _disp_channel(image):
     "First channel of a (C,H,W) or (H,W) image for grayscale display."
     image = _to_numpy(image)
@@ -154,7 +154,7 @@ def save_overlay_grid_jpeg(
     fig.savefig(path, format='jpeg', dpi=100, pil_kwargs={'quality': jpeg_quality}, bbox_inches='tight')
     plt.close(fig)
 
-# %% ../../nbs/12_visualize.ipynb #46c19c1d
+# %% ../../nbs/12_visualize.ipynb #06712f2e
 def _grid(n: int, cols: int) -> Tuple[int, int]:
     "Rows/cols for `n` panels."
     return math.ceil(n / cols), cols
@@ -179,7 +179,7 @@ def sanity_check(dataset, n: int = 8):
     plt.tight_layout()
     return fig
 
-# %% ../../nbs/12_visualize.ipynb #33da5e44
+# %% ../../nbs/12_visualize.ipynb #9888afaf
 def show_batch(model, dataset, device, n: int = 8, threshold: float = 0.5):
     "Overlay predictions for `n` random samples."
     idxs = np.random.choice(len(dataset), min(n, len(dataset)), replace=False)
@@ -238,7 +238,7 @@ def show_top_losses(model, dataset, criterion, device, k: int = 8, threshold: fl
     plt.tight_layout()
     return fig
 
-# %% ../../nbs/12_visualize.ipynb #a80cb0f7
+# %% ../../nbs/12_visualize.ipynb #af014e6b
 DEFAULT_MULTILABEL_COLORS = [
     (0.9, 0.1, 0.1), (0.1, 0.8, 0.1), (0.2, 0.4, 0.95),
     (0.9, 0.8, 0.1), (0.8, 0.1, 0.9), (0.1, 0.8, 0.8),
@@ -329,7 +329,7 @@ def save_multilabel_overlay_grid_jpeg(
     fig.savefig(path, format='jpeg', dpi=100, pil_kwargs={'quality': jpeg_quality}, bbox_inches='tight')
     plt.close(fig)
 
-# %% ../../nbs/12_visualize.ipynb #ab276d17
+# %% ../../nbs/12_visualize.ipynb #72a38d57
 _METRIC_KEYS = ('iou', 'dice', 'recall', 'precision')
 
 def _check_rank_by(rank_by: str) -> str:
@@ -407,7 +407,7 @@ def rank_samples_per_class(
     records.sort(key=lambda r: r['score'], reverse=rank_by == 'loss')
     return records
 
-# %% ../../nbs/12_visualize.ipynb #ce66ce71
+# %% ../../nbs/12_visualize.ipynb #9433351c
 _FN_COLOR, _FP_COLOR, _TP_COLOR = (0.0, 0.8, 0.0), (0.8, 0.0, 0.0), (1.0, 0.0, 1.0)
 
 def _flat_overlay(image, fg, color, alpha: float, ax):
@@ -429,6 +429,11 @@ def _diff_overlay(image, gt_fg, pr_fg, alpha: float, ax):
     ax.imshow(_disp_channel(image), cmap='gray'); ax.imshow(overlay, alpha=alpha); ax.set_axis_off()
     return ax
 
+def _one_hot(labels, num_classes: int) -> np.ndarray:
+    "(H, W) label map -> (num_classes, H, W) 0/1 stack; labels outside [0, num_classes) (e.g. 255 ignore) belong to no class."
+    labels = labels.astype(int)
+    return (labels[None] == np.arange(num_classes)[:, None, None]).astype(int)
+
 def _poster_masks(logits: torch.Tensor, mask, task, class_idx, threshold) -> tuple:
     "GT/pred masks for one poster row: (H, W) binary, or (K, H, W) 0/1 stacks for per-channel rendering."
     ch = logits.detach().squeeze(0).float().cpu()  # (C, H, W); .numpy() below needs fp32 host memory
@@ -438,14 +443,14 @@ def _poster_masks(logits: torch.Tensor, mask, task, class_idx, threshold) -> tup
         pr = (torch.sigmoid(ch[class_idx]) >= threshold).numpy().astype(int)
         return gt, pr
     if task == 'multilabel':
-        gt = (m > 0.5).astype(int) if m.ndim == 3 else \
-            np.eye(int(m.max()) + 1, dtype=int)[m.astype(int)].transpose(2, 0, 1)
+        gt = (m > 0.5).astype(int) if m.ndim == 3 else _one_hot(m, ch.shape[0])
         pr = (torch.sigmoid(ch) >= threshold).numpy().astype(int)
         return gt, pr
     if ch.shape[0] == 1:                         # binary
         return (m > 0.5).astype(int), (torch.sigmoid(ch[0]) >= threshold).numpy().astype(int)
-    eye = np.eye(ch.shape[0], dtype=int)         # multiclass: label maps -> one-hot stacks
-    return eye[m.astype(int)].transpose(2, 0, 1), eye[ch.argmax(0).numpy()].transpose(2, 0, 1)
+    gt = _one_hot(m, ch.shape[0])                # multiclass: label maps -> one-hot stacks
+    pr = _one_hot(ch.argmax(0).numpy(), ch.shape[0]) * gt.any(0)   # ignored pixels carry no prediction either
+    return gt, pr
 
 @torch.no_grad()
 def save_error_poster(
