@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-13
 
+Tighten the `_poster_masks` device/dtype regression tests (#73); test cells only, no library change.
+
+- New CPU-runnable test in `nbs/12_visualize.ipynb`: a stand-in "device" logits object that rejects any use before `.cpu()`, so removing `.cpu()` fails without a GPU. Covers binary, multiclass, multilabel and `class_idx`.
+- fp16/bf16 logits are checked against an fp32 reference, plus a bf16 threshold-boundary case (`sigmoid(-0.001)` rounds to 0.5 in bf16) that fails if `.float()` is removed.
+- The CUDA test now runs on `copy.deepcopy` of `ml_model` / `bin_model` and asserts the shared fixtures stay on CPU.
+- Audit: every remaining raw `.numpy()` in `visualize.py` is inside `_poster_masks` on a tensor already passed through `.float().cpu()`; all other helpers use `_to_numpy` (`.detach().cpu()`).
+
 Fix `_poster_masks` on multiclass ignore labels and multilabel label maps (#72).
 
 - New private `_one_hot` in `nbs/12_visualize.ipynb`: one-hot stacks are sized from the model's channel count and labels outside `[0, C)` (e.g. `255`) belong to no class instead of raising `IndexError`.
