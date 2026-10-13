@@ -10,7 +10,7 @@ __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverla
            'save_checkpoint', 'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch',
            'apply_mosaic_batch', 'apply_copy_paste_batch', 'apply_batch_augs', 'train']
 
-# %% ../../nbs/10_train.ipynb #81c3b971
+# %% ../../nbs/10_train.ipynb #3bafd1d6
 import csv
 import hashlib
 import json
@@ -24,9 +24,9 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #655c09ba
+# %% ../../nbs/10_train.ipynb #16c7c31d
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
-from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights
+from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights, validate_hierarchy_loss
 from segmentation_tools_pt.metrics import SegMetrics
 from segmentation_tools_pt.model import get_param_groups, freeze_encoder, unfreeze_encoder
 from segmentation_tools_pt.visualize import (
@@ -35,7 +35,7 @@ from segmentation_tools_pt.visualize import (
 )
 
 
-# %% ../../nbs/10_train.ipynb #5e9ca94c
+# %% ../../nbs/10_train.ipynb #e7df7b95
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -64,7 +64,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #6ecc4315
+# %% ../../nbs/10_train.ipynb #af1ce44d
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -83,7 +83,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #ebe235e6
+# %% ../../nbs/10_train.ipynb #e275faa2
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -431,7 +431,7 @@ class EncoderDriftCheck(TrainCallback):
         self.before = None
 
 
-# %% ../../nbs/10_train.ipynb #706558c4
+# %% ../../nbs/10_train.ipynb #a7943d70
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -450,7 +450,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #81c750c7
+# %% ../../nbs/10_train.ipynb #913aa0a9
 def flatten_epoch_metrics(
     metrics: Dict,                                    # `SegMetrics.compute()` output (with `per_class`)
     prefix: str,                                      # 'train' or 'val'
@@ -480,7 +480,7 @@ def _write_metrics_csv(
         w.writeheader()
         w.writerows(history)
 
-# %% ../../nbs/10_train.ipynb #cf2afc29
+# %% ../../nbs/10_train.ipynb #382e0ae9
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -498,7 +498,7 @@ def train_one_epoch(
 ) -> Dict[str, float]:
     """Train for one epoch; return averaged losses, `train_*` metrics and `train_per_class`."""
     model.train()
-    running = {'loss': 0., 'loss_tversky': 0., 'loss_dice': 0., 'loss_boundary': 0.}
+    running = {'loss': 0., 'loss_tversky': 0., 'loss_dice': 0., 'loss_boundary': 0., 'loss_hierarchy': 0.}
     metrics = SegMetrics(num_classes=num_classes, task=task, threshold=metrics_threshold)
     for batch_idx, batch in enumerate(loader):
         if state is not None:
@@ -539,7 +539,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #3b9749c6
+# %% ../../nbs/10_train.ipynb #94b8631d
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -582,7 +582,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #1f95158c
+# %% ../../nbs/10_train.ipynb #65c42516
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -607,7 +607,7 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #43126936
+# %% ../../nbs/10_train.ipynb #dcd6081b
 _BATCH_AUG_ORDER = ('mosaic', 'mixup', 'cutmix', 'copy_paste')
 
 def _perm_from_rng(rng, B: int, device) -> torch.Tensor:
@@ -718,7 +718,7 @@ def apply_batch_augs(
     images, targets = fn(images, targets, rng=rng)
     return images, targets, name
 
-# %% ../../nbs/10_train.ipynb #05836f72
+# %% ../../nbs/10_train.ipynb #8a5e4238
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
@@ -743,7 +743,9 @@ def train(
     loss_alpha: float = 0.7,        # Tversky FN weight (higher → fewer misses)
     loss_beta: float = 0.3,         # Tversky FP weight
     loss_gamma: float = 1.33,       # focal exponent
-    loss_phases: Optional[list] = None,  # [{until_epoch, w_tversky, w_dice, w_boundary}]; None = fixed weights
+    loss_phases: Optional[list] = None,  # [{until_epoch, w_tversky, w_dice, w_boundary, w_bce?, w_hierarchy?}]; None = fixed weights
+    hierarchy_pairs: Optional[Sequence[tuple]] = None,  # [(sub_idx, super_idx), ...]; used when a hierarchy weight > 0 (multilabel only)
+    w_hierarchy: float = 0.0,       # run-wide hierarchy-loss weight for phases without their own `w_hierarchy`; 0 = off
     metrics_threshold=0.5,          # sigmoid threshold: float, or per-channel Sequence[float] for task='multilabel'
     best_metric: str = 'iou',       # metric to gate best.pth: iou | dice | recall | precision
     aug=None,                       # AugmentConfig for training augmentations
@@ -819,9 +821,13 @@ def train(
 
     # Configure loss — initial weights from first phase
     _phases = loss_phases or [{'until_epoch': -1, 'w_tversky': 0.6, 'w_dice': 0.4, 'w_boundary': 0.0}]
-    _w0 = resolve_loss_weights(0, _phases)
+    _task = task or ('binary' if num_classes == 1 else 'multiclass')
+    _hier_on = validate_hierarchy_loss(_task, hierarchy_pairs, _phases, w_hierarchy, num_classes=num_classes)
+    _w0 = resolve_loss_weights(0, _phases, w_hierarchy)
     criterion = SegLoss(alpha=loss_alpha, beta=loss_beta, gamma=loss_gamma,
-                        w_tversky=_w0[0], w_dice=_w0[1], w_boundary=_w0[2], task=task).to(device)
+                        w_tversky=_w0[0], w_dice=_w0[1], w_boundary=_w0[2], w_bce=_w0[3],
+                        w_hierarchy=_w0[4], hierarchy_pairs=hierarchy_pairs if _hier_on else None,
+                        task=task).to(device)
     optimizer = AdamW(get_param_groups(model, encoder_lr, decoder_lr), weight_decay=1e-4)
     scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
     scaler = torch.amp.GradScaler('cuda') if (use_amp and device.type == 'cuda') else None
@@ -855,7 +861,7 @@ def train(
         state.history = history
         state.best_score = best_score
         _call_callbacks(callbacks, 'on_epoch_begin', state)
-        _w = resolve_loss_weights(epoch, _phases)
+        _w = resolve_loss_weights(epoch, _phases, w_hierarchy)
         criterion.set_weights(*_w)
         if freeze_epochs > 0 and epoch == freeze_epochs:
             unfreeze_encoder(model)  # -1 never matches (epochs start at 0) -> frozen forever
@@ -871,12 +877,13 @@ def train(
             task=task, metrics_threshold=metrics_threshold,
         )
         scheduler.step()
-        _task = task or ('binary' if num_classes == 1 else 'multiclass')
         tr_flat = flatten_epoch_metrics({**{k[6:]: v for k, v in tr.items() if k.startswith('train_') and k != 'train_per_class'},
                                          'per_class': tr['train_per_class']}, 'train', _task, class_names, log_per_class)
         va_flat = flatten_epoch_metrics(va, 'val', _task, class_names, log_per_class)
         log = dict(epoch=epoch, train_loss=tr['loss'], val_loss=va['val_loss'],
                    **tr_flat, **va_flat, lr=scheduler.get_last_lr()[0])
+        if _hier_on:
+            log['train_loss_hierarchy'] = tr['loss_hierarchy']
         history.append(log)
         (Path(checkpoint_dir) / 'history.json').write_text(json.dumps(history, indent=2))
         if metrics_csv:

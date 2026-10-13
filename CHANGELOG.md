@@ -16,6 +16,19 @@ Per-epoch train vs validation metrics with per-class IoU (#58).
 
 ---
 
+## 2026-10-12
+
+Class-hierarchy loss wired into training (#67, `lifted ⊂ chip`). Default off — configs without a weight behave exactly as before.
+
+- `train(..., hierarchy_pairs=None, w_hierarchy=0.0)` builds `SegLoss` with the hierarchy term; when on, the epoch log / `metrics.csv` gain `train_loss_hierarchy`.
+- `losses.resolve_loss_weights(epoch, phases, w_hierarchy=0.0)` now returns a **5-tuple** `(w_tversky, w_dice, w_boundary, w_bce, w_hierarchy)` (was 4) so `criterion.set_weights(*weights)` takes it directly; a phase may set its own `w_hierarchy`, else the run-wide value, else `0.0`. Callers that unpack exactly four values must be updated.
+- New `losses.validate_hierarchy_loss`: with a weight `> 0`, fails before training for a non-`multilabel` task, unresolved pairs or out-of-range indices.
+- New `hydra_pipeline.resolve_hierarchy_weight` (`train.hierarchy.weight`, default `0.0`); `scripts/train.py` passes pairs + weight. `configs/train_multilabel_3head.yaml` sets `weight: 0.5`.
+- Docs: `docs/TRAINING_CLI.md`, `choose-loss-function` skill, and `tutorials/06_hierarchy_loss.ipynb` (wiring check + A/B with the real `train()` on synthetic data: mean leak 0.144 → 0.029 / 0.013 / 0.007 for weight 0.1 / 0.5 / warm-up; a large weight from epoch 0 cost chip IoU on the toy, so prefer a small weight or a warm-up phase).
+- Still open on #67: the A/B on real data (acceptance item 5).
+
+---
+
 ## 2026-10-08
 
 Tiled-inference consolidation (#27, second slice of map #23, per spec in #24).

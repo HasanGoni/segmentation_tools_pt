@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/transforms.html.md"""
 __all__ = ['compute_dataset_stats', 'BlurBoundaryZone', 'boundary_blur_kwargs_from_cfg', 'get_train_transforms',
            'get_val_transforms', 'unnormalize']
 
-# %% ../../nbs/05_transforms.ipynb #bf5624b4
+# %% ../../nbs/05_transforms.ipynb #0fe985d4
 from typing import Iterable, Mapping, Optional, Sequence, Tuple
 
 import cv2
@@ -19,7 +19,7 @@ from albumentations.pytorch import ToTensorV2
 import torch
 
 
-# %% ../../nbs/05_transforms.ipynb #2ef91ab9
+# %% ../../nbs/05_transforms.ipynb #adb88d62
 def compute_dataset_stats(
     images: Iterable[np.ndarray],  # iterable of (H, W, C) uint8 images
 ) -> Tuple[Tuple[float, ...], Tuple[float, ...]]:
@@ -44,7 +44,7 @@ def compute_dataset_stats(
     std = np.sqrt(np.maximum(s2 / n - mean ** 2, 1e-12))
     return tuple(mean.tolist()), tuple(std.tolist())
 
-# %% ../../nbs/05_transforms.ipynb #6860c132
+# %% ../../nbs/05_transforms.ipynb #5c01863c
 def _odd_kernel(radius: int) -> int:
     k = int(radius) | 1
     return max(k, 3)
@@ -93,9 +93,10 @@ class BlurBoundaryZone(ImageOnlyTransform):
             radius = self.py_random.randrange(lo, hi + 1, 2)
         k = _odd_kernel(radius)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
-        dilated = cv2.dilate(m, kernel)
-        eroded = cv2.erode(m, kernel)
-        band = ((dilated - eroded) > 0).astype(np.uint8)
+        chans = [m] if m.ndim == 2 else [np.ascontiguousarray(m[..., c]) for c in range(m.shape[-1])]  # multilabel (H,W,K)
+        band = np.zeros(m.shape[:2], np.uint8)
+        for ch in chans:  # every class edge gets blurred, incl. sub-class edges inside a super-class
+            band |= ((cv2.dilate(ch, kernel) - cv2.erode(ch, kernel)) > 0).astype(np.uint8)
         if band.max() == 0:
             return {"alpha": None}
         dist = cv2.distanceTransform(band, cv2.DIST_L2, 3)
@@ -108,7 +109,8 @@ class BlurBoundaryZone(ImageOnlyTransform):
             if max(h_lo, h_hi) > 0
             else 0.0
         )
-        outer = ((dilated - m) > 0).astype(np.float32)
+        fg = m if m.ndim == 2 else np.ascontiguousarray(m.max(axis=-1))  # union of classes
+        outer = ((cv2.dilate(fg, kernel) - fg) > 0).astype(np.float32)
         return {"alpha": alpha, "sigma": sigma, "halo": halo, "outer": outer}
 
     def apply(self, img, alpha=None, sigma=5.0, halo=0.0, outer=None, **params):
@@ -117,6 +119,8 @@ class BlurBoundaryZone(ImageOnlyTransform):
         img_f = img.astype(np.float32)
         ksize = int(max(3, round(sigma * 4))) | 1
         blurred = cv2.GaussianBlur(img_f, (ksize, ksize), sigmaX=sigma, sigmaY=sigma)
+        if img_f.ndim == 3 and blurred.ndim == 2:
+            blurred = blurred[..., None]  # cv2 drops the channel axis of (H, W, 1) images
         if halo > 0 and outer is not None:
             boost = halo * 255.0 * outer
             blurred = blurred + (boost[..., None] if img_f.ndim == 3 else boost)
@@ -148,7 +152,7 @@ def boundary_blur_kwargs_from_cfg(aug_cfg: Mapping) -> dict:
     )
 
 
-# %% ../../nbs/05_transforms.ipynb #7acfa740
+# %% ../../nbs/05_transforms.ipynb #a1ae8e4a
 def get_train_transforms(
     crop_size: int = 256,                  # output square crop size
     mean: Sequence[float] = (0., 0., 0.),  # per-channel mean (length == channels)
@@ -188,7 +192,7 @@ def get_val_transforms(
     ])
 
 
-# %% ../../nbs/05_transforms.ipynb #70b06ee8
+# %% ../../nbs/05_transforms.ipynb #6b7746bb
 def unnormalize(
     image: torch.Tensor,                   # (C, H, W) normalized tensor
     mean: Sequence[float] = (0., 0., 0.),  # per-channel mean used in Normalize
