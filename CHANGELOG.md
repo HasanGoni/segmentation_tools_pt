@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-13
+
+Fix `rank_samples`, `rank_samples_per_class`, `compute_patch_losses` and `save_error_poster` side effects (#71).
+
+- New private `_eval_mode(model)` context manager in `nbs/12_visualize.ipynb`: the helpers restore each submodule's own train/eval flag (a frozen BatchNorm stays frozen), so calling them mid-training no longer leaves BatchNorm/Dropout in eval mode.
+- `save_error_poster` closes its figure in a `finally`, so a failure while rendering no longer leaks it.
+
+Fix `save_error_poster` crash on a CUDA model (#69).
+
+- `_poster_masks` in `nbs/12_visualize.ipynb` now calls `.float().cpu()` on the logits before `.numpy()`, covering the binary, multiclass, multilabel and `class_idx` branches (and half-precision models).
+- Added a CUDA regression test cell (skipped when no GPU is available); `ErrorAnalysisCallback` benefits too since it calls `save_error_poster` on the training device.
+
 ## 2026-10-11
 
 Per-epoch train vs validation metrics with per-class IoU (#58).
