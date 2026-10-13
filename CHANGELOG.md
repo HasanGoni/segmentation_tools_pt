@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-13
+
+Fix `save_error_poster` crash on a CUDA model (#69).
+
+- `_poster_masks` in `nbs/12_visualize.ipynb` now calls `.float().cpu()` on the logits before `.numpy()`, covering the binary, multiclass, multilabel and `class_idx` branches (and half-precision models).
+- Added a CUDA regression test cell (skipped when no GPU is available); `ErrorAnalysisCallback` benefits too since it calls `save_error_poster` on the training device.
+
 ## 2026-10-11
 
 Per-epoch train vs validation metrics with per-class IoU (#58).
