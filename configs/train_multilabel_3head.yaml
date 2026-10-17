@@ -39,11 +39,13 @@ patch:
 #   segpt-train configs/train_multilabel_3head.yaml model.source=custom_unet
 # model:
 #   source: smp               # smp (default) | custom_unet
-#   custom_unet:              # used only when source=custom_unet (random-init classic UNet, GroupNorm)
-#     encoder_depth: 4        # explicit integer for now (recommend/auto come later)
+#   custom_unet:              # used only when source=custom_unet (random-init classic UNet)
+#     encoder_depth: recommend  # recommend | auto | <int>; recommend/auto size the net from train.crop_size, clamped to [3, 6]
+#     bottleneck_min_size: 32   # smallest bottleneck side recommend/auto aim for (512 crop -> 4 downs)
 #     base_channels: 32
 #     max_channels: 512
-#     num_groups: 8
+#     num_groups: 8           # GroupNorm only; lowered per layer to a divisor of the channel count
+#     norm: group             # group (default) | batch | instance
 #     # random-init: train() forces freeze_epochs=0 and encoder_lr=decoder_lr (with a warning);
 #     # set freeze_epochs / encoder_lr here to override
 

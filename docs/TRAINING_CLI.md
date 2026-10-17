@@ -241,15 +241,21 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 ### Custom UNet (`model.source`, issue #61)
 
 `model.source: smp` (default) builds the SMP model from `model.arch`; `model.source=custom_unet` builds the library's own
-double-conv/GroupNorm UNet from `model.custom_unet.*` (`encoder_depth` int, `base_channels`, `max_channels`, `num_groups`).
+double-conv/GroupNorm UNet from `model.custom_unet.*` (`encoder_depth`, `bottleneck_min_size`, `base_channels`, `max_channels`, `norm`, `num_groups`).
 It starts from random weights, so training forces `freeze_epochs=0` and `encoder_lr=decoder_lr` unless you set
 `model.custom_unet.freeze_epochs` / `encoder_lr`. Requires `train.crop_size >= 2**encoder_depth`.
 
+`encoder_depth` is `recommend`, `auto` or an integer (#62). `recommend` and `auto` read `train.crop_size`: `auto` is
+`floor(log2(crop / bottleneck_min_size))`, `recommend` rounds the same ratio to the nearest step (a 512 crop with the default
+`bottleneck_min_size: 32` gives 4 downs: 512 -> 256 -> 128 -> 64 -> 32); both are clamped to [3, 6]. An integer is used as given.
+`norm` is `group` (default; the group count is lowered per layer to divide that layer's channels), `batch` or `instance`.
+BatchNorm takes its statistics from the batch, so train with batch size >= 2 and check eval results separately.
+
 ```bash
-segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.encoder_depth=4 model.pretrained=false model.weights_path=null
+segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.encoder_depth=recommend +model.custom_unet.norm=group model.pretrained=false model.weights_path=null
 ```
 
-Hands-on: `tutorials/08_custom_unet.ipynb`. Recommend/auto depth, residual blocks, ASPP and attention follow in #62–#65.
+Hands-on: `tutorials/08_custom_unet.ipynb`. Residual blocks, ASPP and attention follow in #63–#65.
 
 ### Loss phases
 
