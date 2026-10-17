@@ -28,6 +28,14 @@ _Avoid_: backbone_preset flag, train-schedule-in-encoder-pack
 Any other SMP `tu-*` (timm) encoder accepted by `get_model` with a warning — allowed so agents can still build scripts, but not curated or smoke-guaranteed.
 _Avoid_: curated encoder, power-user-only path
 
+**Model source** (`model.source`):
+The config switch that says where the model comes from: `smp` (default; a `segmentation-models-pytorch` architecture and encoder built by `get_model`) or `custom_unet` (the library's own UNet). `get_model_from_cfg` reads it; when it is absent the run is `smp`.
+_Avoid_: model type, backbone flag
+
+**Custom UNet** (`custom_unet`):
+The library-owned classic UNet (double-conv blocks, GroupNorm, explicit `encoder_depth`) selected with `model.source: custom_unet` and tuned under `model.custom_unet.*`. It starts from random weights, so training gives it no freeze warm-up and the same learning rate for encoder and decoder unless the user sets them.
+_Avoid_: pretrained encoder, smp UNet, curated encoder
+
 **Freeze warm-up**:
 Training with the encoder frozen for the first `freeze_epochs` epochs while the decoder learns, then unfreezing the encoder at a lower learning rate.
 _Avoid_: freeze forever, LoRA

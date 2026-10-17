@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-17
+
+Custom UNet tracer bullet: `model.source=custom_unet` builds a library-owned UNet (#61, map #12).
+
+- `nbs/09_model.ipynb`: new `CustomUNet` (double-conv blocks, GroupNorm with a divisor-safe group count, explicit integer `encoder_depth`) exposing SMP-compatible `.encoder` / `.decoder` / `.segmentation_head`, so `get_param_groups` / `freeze_encoder` work unchanged.
+- New `get_model_from_cfg(cfg, in_channels, crop_size, ...)` branches on `model.source` (`smp` default, behaviour unchanged; `custom_unet`). `recommend`/`auto` depth, residual blocks, batch/instance norm and ASPP/attention raise `NotImplementedError` until tickets #62-#65.
+- `scripts/train.py` builds the model through `get_model_from_cfg` (private `_model_kwargs` removed); `configs/train.yaml` gains `model.source: smp` plus a commented `custom_unet` block.
+- Review fixes: `custom_unet` runs with `freeze_epochs=0` and `encoder_lr=decoder_lr` (new `resolve_train_schedule`, warns, overridable via `model.custom_unet.freeze_epochs`/`encoder_lr`); `encoder_depth` (None/str/bool/non-positive) and `norm` are validated up front in `get_model_from_cfg`.
+- Tests in the notebook: output shape at depth 4 on 1x1x64x64, smp regression, freeze/param groups, one-epoch `train()` smoke, FP32 ONNX smoke (skips without `onnx`/`onnxruntime`).
+
 ## 2026-10-13
 
 Tighten the `_poster_masks` device/dtype regression tests (#73); test cells only, no library change.

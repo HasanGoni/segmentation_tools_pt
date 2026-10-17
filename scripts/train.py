@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import sys
-from inspect import signature
 from pathlib import Path
 
 os.environ['TMPDIR'] = '/tmp'
@@ -34,12 +33,13 @@ from segmentation_tools_pt.hydra_pipeline import (
     resolve_mask_cfg,
     resolve_run_seed,
     resolve_task,
+    resolve_train_schedule,
     run_direct_pipeline,
     run_patch_pipeline,
     validate_data_mode_channels,
     validate_patch_training_sizes,
 )
-from segmentation_tools_pt.model import get_model
+from segmentation_tools_pt.model import get_model_from_cfg
 from segmentation_tools_pt.train import build_default_callbacks, train
 
 
@@ -47,21 +47,6 @@ def _resolve_threshold(cfg: DictConfig):
     """`metrics.threshold` as a plain float or list (OmegaConf ListConfig -> list, for task='multilabel')."""
     th = cfg.metrics.threshold
     return OmegaConf.to_container(th, resolve=True) if OmegaConf.is_config(th) else th
-
-
-def _model_kwargs(cfg: DictConfig, in_channels: int, *, pretrained: bool, weights_path=None) -> dict:
-    """Hydra model section → get_model kwargs (works before/after nbdev_export)."""
-    kw = dict(
-        arch=cfg.model.arch,
-        in_channels=in_channels,
-        num_classes=cfg.train.num_classes,
-        pretrained=pretrained,
-    )
-    if weights_path is not None:
-        kw['weights_path'] = weights_path
-    if 'architecture' in signature(get_model).parameters:
-        kw['architecture'] = cfg.model.get('architecture', 'unet')
-    return kw
 
 
 def _export_best_model(
@@ -79,7 +64,7 @@ def _export_best_model(
     device = torch.device(
         cfg.train.device if torch.cuda.is_available() else 'cpu'
     )
-    model = get_model(**_model_kwargs(cfg, in_channels, pretrained=False))
+    model = get_model_from_cfg(cfg, in_channels, crop_size=cfg.train.crop_size, pretrained=False)
     ckpt = torch.load(best_path, map_location=device, weights_only=False)
     model.load_state_dict(ckpt['model_state'])
     model = model.to(device)
@@ -200,11 +185,11 @@ def main(cfg: DictConfig) -> None:
 
     print(f'Model weights path: {weights_path}')
 
-    model = get_model(**_model_kwargs(cfg, in_channels, pretrained=cfg.model.pretrained, weights_path=weights_path))
+    model = get_model_from_cfg(cfg, in_channels, crop_size=cfg.train.crop_size, weights_path=weights_path)
     arch_label = (
-        f"{cfg.model.get('architecture', 'unet')}+{cfg.model.arch}"
-        if 'architecture' in signature(get_model).parameters
-        else cfg.model.arch
+        'custom_unet'
+        if cfg.model.get('source', 'smp') == 'custom_unet'
+        else f"{cfg.model.get('architecture', 'unet')}+{cfg.model.arch}"
     )
     n_params = sum(p.numel() for p in model.parameters())
     print(f'\nModel: {arch_label}  params={n_params:,}  in_channels={in_channels}')
@@ -270,12 +255,13 @@ def main(cfg: DictConfig) -> None:
         drift_check=bool(drift_cfg.get('enabled', False)),
         drift_expect_frozen=(
             bool(drift_cfg.expect_frozen) if drift_cfg.get('expect_frozen') is not None
-            else cfg.train.freeze_epochs == -1  # derive: freeze-forever runs must stay bit-identical
+            else resolve_train_schedule(cfg).freeze_epochs == -1  # derive: freeze-forever runs must stay bit-identical
         ),
         task=task,
         class_names=mask_cfg['class_names'],
     )
 
+    schedule = resolve_train_schedule(cfg)
     history = train(
         root=data_root,
         model=model,
@@ -284,9 +270,9 @@ def main(cfg: DictConfig) -> None:
         num_classes=cfg.train.num_classes,
         num_epochs=cfg.train.epochs,
         batch_size=cfg.train.batch_size,
-        encoder_lr=cfg.train.encoder_lr,
-        decoder_lr=cfg.train.decoder_lr,
-        freeze_epochs=cfg.train.freeze_epochs,
+        encoder_lr=schedule.encoder_lr,
+        decoder_lr=schedule.decoder_lr,
+        freeze_epochs=schedule.freeze_epochs,
         crop_size=cfg.train.crop_size,
         n_source_channels=n_source,
         channel_names=channel_names,
