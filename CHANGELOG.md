@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-17
 
+Custom UNet residual block style (#63, map #12).
+
+- `nbs/09_model.ipynb`: new `model.custom_unet.block_style: double | residual`. The residual block is Conv3x3-Norm-ReLU-Conv3x3-Norm, add the skip (bias-free 1x1 conv when channels differ, identity otherwise), ReLU; used in encoder and decoder (decoder blocks take the concatenated `2*ch` input). One `_BLOCKS` table maps style to block class; unknown values raise `ValueError` early (was `NotImplementedError` for anything but `double`). `bottleneck != none` still raises `NotImplementedError` (#64-#65).
+- Tests: shapes with every norm incl. odd sizes, residual adds exactly the 1x1 projections' parameters (5384 at depth 3, base 8), skip carries signal, the one-epoch `train()` smoke now runs for both styles, residual added to the dynamic-H/W ONNX smoke.
+- Configs, `choose-model-architecture` skill, `docs/TRAINING_CLI.md`, `CONTEXT.md` and `tutorials/08_custom_unet.ipynb` updated.
+
 Custom UNet automatic depth and selectable norm (#62, map #12).
 
 - `nbs/09_model.ipynb`: new `resolve_encoder_depth(depth, crop_size, bottleneck_min_size=32)`; `recommend` (nearest step, 512 crop -> 4 downs) and `auto` (`floor(log2(crop/min))`) are clamped to [3, 6], an integer is honoured as-is. New config key `model.custom_unet.bottleneck_min_size`.
