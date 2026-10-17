@@ -34,8 +34,8 @@ Terms: "downs" = how many times the image is halved (`encoder_depth`, default 4 
 Knobs (`model.custom_unet.*`): `encoder_depth` (`recommend` | `auto` | explicit int; an int needs `train.crop_size >= 2**depth`),
 `bottleneck_min_size` (32), `base_channels` (32), `max_channels` (512), `norm` (`group` | `batch` | `instance`), `num_groups` (8, GroupNorm only).
 `recommend`/`auto` read `train.crop_size`: a 512 crop gives 4 downs; `auto` is `floor(log2(crop/min))`, `recommend` rounds to the nearest step; both clamped to [3, 6].
-`batch` norm misbehaves with tiny batches (stats come from the batch), so prefer `group` or `instance` there. Not implemented yet and rejected with a clear error:
-`block_style: residual`, `bottleneck: aspp|attention` (tickets #63–#65). `in_channels` and
+`batch` norm misbehaves with tiny batches (stats come from the batch), so prefer `group` or `instance` there. `block_style` (`double` default | `residual`: Conv-Norm-ReLU-Conv-Norm plus a skip, with a 1x1 conv when channels change; same output shape, a few more parameters, works with every norm).
+Not implemented yet and rejected with a clear error: `bottleneck: aspp|attention` (tickets #64–#65). `in_channels` and
 `train.num_classes` still come from the data config, so the choose-channels decision applies unchanged.
 Hands-on: `tutorials/08_custom_unet.ipynb`.
 

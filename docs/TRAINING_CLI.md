@@ -241,7 +241,7 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 ### Custom UNet (`model.source`, issue #61)
 
 `model.source: smp` (default) builds the SMP model from `model.arch`; `model.source=custom_unet` builds the library's own
-double-conv/GroupNorm UNet from `model.custom_unet.*` (`encoder_depth`, `bottleneck_min_size`, `base_channels`, `max_channels`, `norm`, `num_groups`).
+UNet from `model.custom_unet.*` (`encoder_depth`, `bottleneck_min_size`, `base_channels`, `max_channels`, `norm`, `num_groups`, `block_style`). The block style (`double` conv or `residual`) and the norm (`group`, `batch`, `instance`) are selectable; the defaults are `double` and `group`.
 It starts from random weights, so training forces `freeze_epochs=0` and `encoder_lr=decoder_lr` unless you set
 `model.custom_unet.freeze_epochs` / `encoder_lr`. Requires `train.crop_size >= 2**encoder_depth`.
 
@@ -256,7 +256,7 @@ BatchNorm takes its statistics from the batch, so train with batch size >= 2 and
 segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.encoder_depth=recommend +model.custom_unet.norm=group model.pretrained=false model.weights_path=null
 ```
 
-Hands-on: `tutorials/08_custom_unet.ipynb`. Residual blocks, ASPP and attention follow in #63–#65.
+Hands-on: `tutorials/08_custom_unet.ipynb`. `block_style: residual` (#63) swaps each double conv for a residual block (Conv-Norm-ReLU-Conv-Norm, add the input, ReLU; a bias-free 1x1 conv carries the input when the channel count changes), e.g. `+model.custom_unet.block_style=residual`. Works with every `norm`; an unknown value is rejected up front. ASPP and attention follow in #64–#65.
 
 ### Loss phases
 
