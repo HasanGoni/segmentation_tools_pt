@@ -245,7 +245,8 @@ double-conv/GroupNorm UNet from `model.custom_unet.*` (`encoder_depth`, `bottlen
 It starts from random weights, so training forces `freeze_epochs=0` and `encoder_lr=decoder_lr` unless you set
 `model.custom_unet.freeze_epochs` / `encoder_lr`. Requires `train.crop_size >= 2**encoder_depth`.
 
-`encoder_depth` is `recommend`, `auto` or an integer (#62). `recommend` and `auto` read `train.crop_size`: `auto` is
+`encoder_depth` is the number of "downs" (how many times the image is halved on the way down) and defaults to 4 when absent; it can also be
+`recommend`, `auto` or an integer (#62). The "bottleneck" is the smallest feature map, in the middle of the UNet, after the last halving. `recommend` and `auto` read `train.crop_size`: `auto` is
 `floor(log2(crop / bottleneck_min_size))`, `recommend` rounds the same ratio to the nearest step (a 512 crop with the default
 `bottleneck_min_size: 32` gives 4 downs: 512 -> 256 -> 128 -> 64 -> 32); both are clamped to [3, 6]. An integer is used as given.
 `norm` is `group` (default; the group count is lowered per layer to divide that layer's channels), `batch` or `instance`.

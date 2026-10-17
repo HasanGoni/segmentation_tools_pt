@@ -30,6 +30,7 @@ segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.encod
     model.pretrained=false model.weights_path=null train.crop_size=512
 ```
 
+Terms: "downs" = how many times the image is halved (`encoder_depth`, default 4 when absent); "bottleneck" = the smallest feature map in the middle of the UNet.
 Knobs (`model.custom_unet.*`): `encoder_depth` (`recommend` | `auto` | explicit int; an int needs `train.crop_size >= 2**depth`),
 `bottleneck_min_size` (32), `base_channels` (32), `max_channels` (512), `norm` (`group` | `batch` | `instance`), `num_groups` (8, GroupNorm only).
 `recommend`/`auto` read `train.crop_size`: a 512 crop gives 4 downs; `auto` is `floor(log2(crop/min))`, `recommend` rounds to the nearest step; both clamped to [3, 6].
