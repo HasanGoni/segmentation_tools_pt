@@ -22,6 +22,8 @@ model:
   #   base_channels: 32
   #   max_channels: 512
   #   num_groups: 8
+  #   # random-init: train() forces freeze_epochs=0 and encoder_lr=decoder_lr (with a warning);
+  #   # set freeze_epochs / encoder_lr here to override
 
 train:
   epochs: 100
