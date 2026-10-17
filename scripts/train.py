@@ -254,13 +254,13 @@ def main(cfg: DictConfig) -> None:
         drift_check=bool(drift_cfg.get('enabled', False)),
         drift_expect_frozen=(
             bool(drift_cfg.expect_frozen) if drift_cfg.get('expect_frozen') is not None
-            else resolve_train_schedule(cfg)[0] == -1  # derive: freeze-forever runs must stay bit-identical
+            else resolve_train_schedule(cfg).freeze_epochs == -1  # derive: freeze-forever runs must stay bit-identical
         ),
         task=task,
         class_names=mask_cfg['class_names'],
     )
 
-    freeze_epochs, encoder_lr, decoder_lr = resolve_train_schedule(cfg)
+    schedule = resolve_train_schedule(cfg)
     history = train(
         root=data_root,
         model=model,
@@ -269,9 +269,9 @@ def main(cfg: DictConfig) -> None:
         num_classes=cfg.train.num_classes,
         num_epochs=cfg.train.epochs,
         batch_size=cfg.train.batch_size,
-        encoder_lr=encoder_lr,
-        decoder_lr=decoder_lr,
-        freeze_epochs=freeze_epochs,
+        encoder_lr=schedule.encoder_lr,
+        decoder_lr=schedule.decoder_lr,
+        freeze_epochs=schedule.freeze_epochs,
         crop_size=cfg.train.crop_size,
         n_source_channels=n_source,
         channel_names=channel_names,

@@ -7,10 +7,10 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/model.html.md"""
 # %% auto #0
 __all__ = ['SMP_ARCHITECTURES', 'CURATED_ENCODER_ALIASES', 'CURATED_TU_ENCODERS', 'list_smp_architectures', 'list_smp_encoders',
            'get_model', 'download_encoder_weights', 'get_param_groups', 'freeze_encoder', 'unfreeze_encoder',
-           'Dinov3ReassembleEncoder', 'resolve_encoder_name', 'CustomUNet', 'get_model_from_cfg',
+           'Dinov3ReassembleEncoder', 'resolve_encoder_name', 'CustomUNet', 'get_model_from_cfg', 'TrainSchedule',
            'resolve_train_schedule']
 
-# %% ../../nbs/09_model.ipynb #165da580
+# %% ../../nbs/09_model.ipynb #515bbfb2
 from typing import List, Optional, Set
 import warnings
 
@@ -18,10 +18,10 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/09_model.ipynb #24476e8a
+# %% ../../nbs/09_model.ipynb #f6112ced
 import segmentation_models_pytorch as smp
 
-# %% ../../nbs/09_model.ipynb #b174265f
+# %% ../../nbs/09_model.ipynb #f8fbb5c6
 SMP_ARCHITECTURES = {
     'unet': smp.Unet,
     'unetplusplus': smp.UnetPlusPlus,
@@ -135,7 +135,7 @@ def get_model(
     return model
 
 
-# %% ../../nbs/09_model.ipynb #df14d6d3
+# %% ../../nbs/09_model.ipynb #c5666a23
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name  (e.g. 'resnet34', 'efficientnet-b0')
     save_path: str,      # local .pth path to write   (e.g. '/data/weights/resnet34.pth')
@@ -167,7 +167,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #67c9f4e9
+# %% ../../nbs/09_model.ipynb #dde67fb4
 def get_param_groups(
     model: nn.Module,        # an smp model (or any model; falls back to one group if no .encoder)
     encoder_lr: float = 1e-4,  # LR for the pretrained encoder
@@ -194,12 +194,12 @@ def unfreeze_encoder(model: nn.Module) -> None:
     for p in model.encoder.parameters():
         p.requires_grad = True
 
-# %% ../../nbs/09_model.ipynb #787a58e6
+# %% ../../nbs/09_model.ipynb #9cb3355a
 import timm
 from segmentation_models_pytorch.encoders._base import EncoderMixin
 
 
-# %% ../../nbs/09_model.ipynb #829bacf2
+# %% ../../nbs/09_model.ipynb #fc52a7fc
 class _Reassemble(nn.Module):
     "Project a ViT token feature map to `out_ch` channels, then resize to the target stride."
     def __init__(self, in_ch: int, out_ch: int, scale: float):
@@ -217,7 +217,7 @@ class _Reassemble(nn.Module):
 
 
 
-# %% ../../nbs/09_model.ipynb #7dd17f9d
+# %% ../../nbs/09_model.ipynb #3c4e7841
 class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
     """DINOv3 ViT backbone + DPT-style reassemble, exposed as an smp `EncoderMixin`
     so it can be used as `get_model(arch='dinov3_vit_small', architecture='unet', ...)`.
@@ -282,7 +282,7 @@ class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
 
 
 
-# %% ../../nbs/09_model.ipynb #996b8f8b
+# %% ../../nbs/09_model.ipynb #cafd6585
 def _register_dinov3_encoders() -> None:
     "Register the DINOv3 encoders into smp so `list_smp_encoders()` and `get_model()` see them."
     for name, model_name in [
@@ -298,7 +298,7 @@ def _register_dinov3_encoders() -> None:
 _register_dinov3_encoders()
 
 
-# %% ../../nbs/09_model.ipynb #6a1b3157
+# %% ../../nbs/09_model.ipynb #494223a5
 CURATED_ENCODER_ALIASES = {
     'convnext_tiny': 'tu-convnext_tiny',
     'efficientnetv2_s': 'tu-tf_efficientnetv2_s',
@@ -334,7 +334,7 @@ def _validate_encoder_name(encoder_name: str) -> None:
     )
 
 
-# %% ../../nbs/09_model.ipynb #6a7c22bb
+# %% ../../nbs/09_model.ipynb #98eb0c13
 def list_smp_encoders() -> List[str]:
     """Encoder names for discovery: SMP registry + DINOv3 + curated aliases / `tu-*`.
 
@@ -348,7 +348,7 @@ def list_smp_encoders() -> List[str]:
 
 
 
-# %% ../../nbs/09_model.ipynb #f9be9fe0
+# %% ../../nbs/09_model.ipynb #198138b5
 def get_model(
     arch: str = 'mobilenet_v2',   # encoder name — alias kept for Hydra `model.arch`
     in_channels: int = 3,
@@ -401,7 +401,7 @@ def get_model(
 
 
 
-# %% ../../nbs/09_model.ipynb #ef5aafcf
+# %% ../../nbs/09_model.ipynb #a5f60b5e
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name or curated alias
     save_path: str,      # local .pth path to write
@@ -432,7 +432,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #fcdbd919
+# %% ../../nbs/09_model.ipynb #12164044
 def _group_count(channels: int, want: int = 8) -> int:
     "Largest group count <= `want` that divides `channels` (GroupNorm needs an exact divisor)."
     return max(g for g in range(1, min(want, channels) + 1) if channels % g == 0)
@@ -509,7 +509,7 @@ class CustomUNet(nn.Module):
     def forward(self, x):
         return self.segmentation_head(self.decoder(self.encoder(x)))
 
-# %% ../../nbs/09_model.ipynb #7cb54bde
+# %% ../../nbs/09_model.ipynb #8188628d
 def _custom_unet_cfg(model_cfg):
     "The `model.custom_unet` block, or an empty dict when absent or null."
     return model_cfg.get('custom_unet', None) or {}
@@ -565,11 +565,19 @@ def get_model_from_cfg(
                           norm=norm, num_groups=custom_cfg.get('num_groups', 8))
     raise ValueError(f"Unknown model.source {source!r}; choose 'smp' or 'custom_unet'")
 
-# %% ../../nbs/09_model.ipynb #31e321f9
+# %% ../../nbs/09_model.ipynb #20a988ea
+from typing import NamedTuple
+
+class TrainSchedule(NamedTuple):
+    "Encoder freeze length and learning rates handed to `train()`; unpacks like a plain tuple."
+    freeze_epochs: int
+    encoder_lr: float
+    decoder_lr: float
+
 def resolve_train_schedule(
     cfg,   # Hydra config with `model.*` and `train.{freeze_epochs,encoder_lr,decoder_lr}`
-) -> tuple:
-    """Return `(freeze_epochs, encoder_lr, decoder_lr)` for `train()`, neutralising pretrained-encoder settings for `custom_unet`.
+) -> TrainSchedule:
+    """Return `TrainSchedule(freeze_epochs, encoder_lr, decoder_lr)` for `train()`, neutralising pretrained-encoder settings for `custom_unet`.
 
     `custom_unet` is random-init, so a frozen warmup and a lower encoder LR would starve it. Unless
     `model.custom_unet.freeze_epochs` / `encoder_lr` are set explicitly, it gets `freeze_epochs=0` and
@@ -581,7 +589,7 @@ def resolve_train_schedule(
     train_cfg = cfg.train
     freeze, enc_lr, dec_lr = train_cfg.freeze_epochs, train_cfg.encoder_lr, train_cfg.decoder_lr
     if cfg.model.get('source', 'smp') != 'custom_unet':
-        return freeze, enc_lr, dec_lr
+        return TrainSchedule(freeze, enc_lr, dec_lr)
     custom_cfg = _custom_unet_cfg(cfg.model)
     freeze_out = custom_cfg.get('freeze_epochs', None)
     encoder_lr_out = custom_cfg.get('encoder_lr', None)
@@ -592,4 +600,4 @@ def resolve_train_schedule(
             f'model.source=custom_unet is random-init: using freeze_epochs={freeze_out} and encoder_lr={encoder_lr_out} '
             f'instead of train.freeze_epochs={freeze} / train.encoder_lr={enc_lr}. '
             'Set model.custom_unet.freeze_epochs / model.custom_unet.encoder_lr to override.', UserWarning)
-    return freeze_out, encoder_lr_out, dec_lr
+    return TrainSchedule(freeze_out, encoder_lr_out, dec_lr)
