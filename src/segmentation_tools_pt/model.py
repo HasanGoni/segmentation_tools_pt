@@ -7,9 +7,9 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/model.html.md"""
 # %% auto #0
 __all__ = ['SMP_ARCHITECTURES', 'CURATED_ENCODER_ALIASES', 'CURATED_TU_ENCODERS', 'list_smp_architectures', 'list_smp_encoders',
            'get_model', 'download_encoder_weights', 'get_param_groups', 'freeze_encoder', 'unfreeze_encoder',
-           'Dinov3ReassembleEncoder', 'resolve_encoder_name']
+           'Dinov3ReassembleEncoder', 'resolve_encoder_name', 'CustomUNet', 'get_model_from_cfg']
 
-# %% ../../nbs/09_model.ipynb #c2dd89e7
+# %% ../../nbs/09_model.ipynb #8da9e5bd
 from typing import List, Optional, Set
 import warnings
 
@@ -17,10 +17,10 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/09_model.ipynb #b5448bc5
+# %% ../../nbs/09_model.ipynb #63fd9f18
 import segmentation_models_pytorch as smp
 
-# %% ../../nbs/09_model.ipynb #3717bbfe
+# %% ../../nbs/09_model.ipynb #eeb8f92c
 SMP_ARCHITECTURES = {
     'unet': smp.Unet,
     'unetplusplus': smp.UnetPlusPlus,
@@ -134,7 +134,7 @@ def get_model(
     return model
 
 
-# %% ../../nbs/09_model.ipynb #eae76c11
+# %% ../../nbs/09_model.ipynb #403dea5a
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name  (e.g. 'resnet34', 'efficientnet-b0')
     save_path: str,      # local .pth path to write   (e.g. '/data/weights/resnet34.pth')
@@ -166,7 +166,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #84c5d48f
+# %% ../../nbs/09_model.ipynb #efd3a3c5
 def get_param_groups(
     model: nn.Module,        # an smp model (or any model; falls back to one group if no .encoder)
     encoder_lr: float = 1e-4,  # LR for the pretrained encoder
@@ -193,12 +193,12 @@ def unfreeze_encoder(model: nn.Module) -> None:
     for p in model.encoder.parameters():
         p.requires_grad = True
 
-# %% ../../nbs/09_model.ipynb #e6c78d56
+# %% ../../nbs/09_model.ipynb #942971ac
 import timm
 from segmentation_models_pytorch.encoders._base import EncoderMixin
 
 
-# %% ../../nbs/09_model.ipynb #51c15b3b
+# %% ../../nbs/09_model.ipynb #30041080
 class _Reassemble(nn.Module):
     "Project a ViT token feature map to `out_ch` channels, then resize to the target stride."
     def __init__(self, in_ch: int, out_ch: int, scale: float):
@@ -216,7 +216,7 @@ class _Reassemble(nn.Module):
 
 
 
-# %% ../../nbs/09_model.ipynb #6d1f5d4f
+# %% ../../nbs/09_model.ipynb #f258aa39
 class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
     """DINOv3 ViT backbone + DPT-style reassemble, exposed as an smp `EncoderMixin`
     so it can be used as `get_model(arch='dinov3_vit_small', architecture='unet', ...)`.
@@ -281,7 +281,7 @@ class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
 
 
 
-# %% ../../nbs/09_model.ipynb #b7c62f42
+# %% ../../nbs/09_model.ipynb #ef0ef008
 def _register_dinov3_encoders() -> None:
     "Register the DINOv3 encoders into smp so `list_smp_encoders()` and `get_model()` see them."
     for name, model_name in [
@@ -297,7 +297,7 @@ def _register_dinov3_encoders() -> None:
 _register_dinov3_encoders()
 
 
-# %% ../../nbs/09_model.ipynb #098d424e
+# %% ../../nbs/09_model.ipynb #391290f7
 CURATED_ENCODER_ALIASES = {
     'convnext_tiny': 'tu-convnext_tiny',
     'efficientnetv2_s': 'tu-tf_efficientnetv2_s',
@@ -333,7 +333,7 @@ def _validate_encoder_name(encoder_name: str) -> None:
     )
 
 
-# %% ../../nbs/09_model.ipynb #b4941118
+# %% ../../nbs/09_model.ipynb #7b251f22
 def list_smp_encoders() -> List[str]:
     """Encoder names for discovery: SMP registry + DINOv3 + curated aliases / `tu-*`.
 
@@ -347,7 +347,7 @@ def list_smp_encoders() -> List[str]:
 
 
 
-# %% ../../nbs/09_model.ipynb #983037be
+# %% ../../nbs/09_model.ipynb #a0f16ae9
 def get_model(
     arch: str = 'mobilenet_v2',   # encoder name — alias kept for Hydra `model.arch`
     in_channels: int = 3,
@@ -400,7 +400,7 @@ def get_model(
 
 
 
-# %% ../../nbs/09_model.ipynb #52c14770
+# %% ../../nbs/09_model.ipynb #0f1a371c
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name or curated alias
     save_path: str,      # local .pth path to write
@@ -430,3 +430,119 @@ def download_encoder_weights(
     print(f'Saved {encoder_name} encoder  ({n} tensors, {size_mb:.1f} MB)  →  {save_path}')
     del tmp
 
+
+# %% ../../nbs/09_model.ipynb #be89c794
+def _group_count(channels: int, want: int = 8) -> int:
+    "Largest group count <= `want` that divides `channels` (GroupNorm needs an exact divisor)."
+    return max(g for g in range(1, min(want, channels) + 1) if channels % g == 0)
+
+def _norm_layer(norm: str, channels: int, num_groups: int) -> nn.Module:
+    if norm == 'group':
+        return nn.GroupNorm(_group_count(channels, num_groups), channels)
+    raise NotImplementedError(f"norm={norm!r} is not implemented yet; only 'group' is supported")
+
+class _DoubleConv(nn.Sequential):
+    "Conv3x3 -> Norm -> ReLU, twice (Ronneberger block)."
+    def __init__(self, in_ch: int, out_ch: int, norm: str = 'group', num_groups: int = 8):
+        super().__init__(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False), _norm_layer(norm, out_ch, num_groups), nn.ReLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False), _norm_layer(norm, out_ch, num_groups), nn.ReLU(inplace=True),
+        )
+
+class _CustomUNetEncoder(nn.Module):
+    "`depth + 1` stages; `forward` returns the feature map of every stage (shallow to deep)."
+    def __init__(self, in_channels, channels, norm, num_groups):
+        super().__init__()
+        stages = [_DoubleConv(in_channels, channels[0], norm, num_groups)]
+        for i in range(1, len(channels)):
+            stages.append(nn.Sequential(nn.MaxPool2d(2), _DoubleConv(channels[i - 1], channels[i], norm, num_groups)))
+        self.stages = nn.ModuleList(stages)
+    def forward(self, x):
+        feats = []
+        for stage in self.stages:
+            x = stage(x)
+            feats.append(x)
+        return feats
+
+class _CustomUNetDecoder(nn.Module):
+    "Mirror of the encoder: upsample, concat the skip, double conv. Returns the full-resolution map."
+    def __init__(self, channels, norm, num_groups):
+        super().__init__()
+        n = len(channels) - 1
+        self.ups = nn.ModuleList([nn.ConvTranspose2d(channels[i + 1], channels[i], 2, stride=2) for i in reversed(range(n))])
+        self.blocks = nn.ModuleList([_DoubleConv(2 * channels[i], channels[i], norm, num_groups) for i in reversed(range(n))])
+    def forward(self, feats):
+        x = feats[-1]
+        for up, block, skip in zip(self.ups, self.blocks, reversed(feats[:-1])):
+            x = up(x)
+            if x.shape[-2:] != skip.shape[-2:]:  # odd sizes lose a pixel when pooling
+                x = nn.functional.interpolate(x, size=skip.shape[-2:], mode='nearest')
+            x = block(torch.cat([skip, x], dim=1))
+        return x
+
+class CustomUNet(nn.Module):
+    """Library-owned classic UNet returning raw logits `(B, num_classes, H, W)`.
+
+    Exposes `.encoder` / `.decoder` / `.segmentation_head` like an smp model, so
+    `get_param_groups` and `freeze_encoder` work unchanged.
+
+    Example:
+        >>> m = CustomUNet(in_channels=1, num_classes=1, encoder_depth=4)
+        >>> tuple(m(torch.randn(1, 1, 64, 64)).shape)
+        (1, 1, 64, 64)
+    """
+    def __init__(self, in_channels: int = 1, num_classes: int = 1, encoder_depth: int = 4,
+                 base_channels: int = 32, max_channels: int = 512, norm: str = 'group', num_groups: int = 8):
+        super().__init__()
+        if encoder_depth < 1:
+            raise ValueError(f'encoder_depth must be >= 1, got {encoder_depth}')
+        channels = [min(base_channels * 2**i, max_channels) for i in range(encoder_depth + 1)]
+        self.encoder = _CustomUNetEncoder(in_channels, channels, norm, num_groups)
+        self.decoder = _CustomUNetDecoder(channels, norm, num_groups)
+        self.segmentation_head = nn.Conv2d(channels[0], num_classes, 1)
+    def forward(self, x):
+        return self.segmentation_head(self.decoder(self.encoder(x)))
+
+# %% ../../nbs/09_model.ipynb #97521f3d
+def get_model_from_cfg(
+    cfg,                          # Hydra config with `model.*` and `train.num_classes`
+    in_channels: int,             # channels fed to the model (from data_mode)
+    crop_size: int,               # model-view crop side, passed explicitly by the caller
+    pretrained: Optional[bool] = None,   # override `model.pretrained` (e.g. False when rebuilding for export)
+    weights_path: Optional[str] = None,  # local encoder .pth (smp only)
+) -> nn.Module:
+    """Build the model selected by `model.source`: `smp` (default) or `custom_unet`.
+
+    Example:
+        >>> m = get_model_from_cfg(cfg, in_channels=1, crop_size=64)  # doctest: +SKIP
+    """
+    mcfg = cfg.model
+    source = mcfg.get('source', 'smp')
+    if pretrained is None:
+        pretrained = bool(mcfg.get('pretrained', False))
+    num_classes = cfg.train.num_classes
+    if source == 'smp':
+        kw = dict(arch=mcfg.arch, in_channels=in_channels, num_classes=num_classes,
+                  pretrained=pretrained, architecture=mcfg.get('architecture', 'unet'))
+        if weights_path is not None:
+            kw['weights_path'] = weights_path
+        return get_model(**kw)
+    if source == 'custom_unet':
+        c = mcfg.get('custom_unet', None) or {}
+        block = c.get('block_style', 'double')
+        if block != 'double':
+            raise NotImplementedError(f"custom_unet.block_style={block!r} is not implemented yet; only 'double'")
+        if c.get('bottleneck', 'none') != 'none':
+            raise NotImplementedError("custom_unet.bottleneck other than 'none' is not implemented yet")
+        depth = c.get('encoder_depth', 4)
+        if isinstance(depth, str) or isinstance(depth, bool) or int(depth) != depth:
+            raise NotImplementedError(f"custom_unet.encoder_depth={depth!r}: only an explicit integer is supported yet")
+        depth = int(depth)
+        if crop_size < 2 ** depth:
+            raise ValueError(f'crop_size={crop_size} is too small for encoder_depth={depth} (needs >= {2 ** depth})')
+        if pretrained or weights_path is not None:
+            warnings.warn('model.source=custom_unet is random-init; pretrained/weights_path are ignored', UserWarning)
+        return CustomUNet(in_channels=in_channels, num_classes=num_classes, encoder_depth=depth,
+                          base_channels=c.get('base_channels', 32), max_channels=c.get('max_channels', 512),
+                          norm=c.get('norm', 'group'), num_groups=c.get('num_groups', 8))
+    raise ValueError(f"Unknown model.source {source!r}; choose 'smp' or 'custom_unet'")
