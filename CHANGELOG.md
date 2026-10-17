@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-17
 
+Custom UNet automatic depth and selectable norm (#62, map #12).
+
+- `nbs/09_model.ipynb`: new `resolve_encoder_depth(depth, crop_size, bottleneck_min_size=32)`; `recommend` (nearest step, 512 crop -> 4 downs) and `auto` (`floor(log2(crop/min))`) are clamped to [3, 6], an integer is honoured as-is. New config key `model.custom_unet.bottleneck_min_size`.
+- `norm: group | batch | instance` implemented in `_norm_layer`; unknown norms now raise `ValueError` (was `NotImplementedError`). Tests cover the depth table, clamps, GroupNorm divisibility for every stage (incl. base_channels 12/20/24), batch/instance shapes, BatchNorm train vs eval, and a dynamic-size ONNX smoke for both.
+- Configs, `choose-model-architecture` skill, `docs/TRAINING_CLI.md` and `tutorials/08_custom_unet.ipynb` updated. Residual blocks and bottlenecks stay `NotImplementedError` (#63-#65).
+
 Custom UNet tracer bullet: `model.source=custom_unet` builds a library-owned UNet (#61, map #12).
 
 - `nbs/09_model.ipynb`: new `CustomUNet` (double-conv blocks, GroupNorm with a divisor-safe group count, explicit integer `encoder_depth`) exposing SMP-compatible `.encoder` / `.decoder` / `.segmentation_head`, so `get_param_groups` / `freeze_encoder` work unchanged.

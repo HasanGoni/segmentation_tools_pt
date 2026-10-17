@@ -7,20 +7,22 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/model.html.md"""
 # %% auto #0
 __all__ = ['SMP_ARCHITECTURES', 'CURATED_ENCODER_ALIASES', 'CURATED_TU_ENCODERS', 'list_smp_architectures', 'list_smp_encoders',
            'get_model', 'download_encoder_weights', 'get_param_groups', 'freeze_encoder', 'unfreeze_encoder',
-           'Dinov3ReassembleEncoder', 'resolve_encoder_name', 'CustomUNet', 'get_model_from_cfg']
+           'Dinov3ReassembleEncoder', 'resolve_encoder_name', 'CustomUNet', 'resolve_encoder_depth',
+           'get_model_from_cfg']
 
-# %% ../../nbs/09_model.ipynb #0ef8586b
-from typing import List, Optional, Set
+# %% ../../nbs/09_model.ipynb #3395f64a
+from typing import List, Optional, Set, Union
+import math
 import warnings
 
 import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/09_model.ipynb #fcefa595
+# %% ../../nbs/09_model.ipynb #d42ecb22
 import segmentation_models_pytorch as smp
 
-# %% ../../nbs/09_model.ipynb #28a862a2
+# %% ../../nbs/09_model.ipynb #4abd00a1
 SMP_ARCHITECTURES = {
     'unet': smp.Unet,
     'unetplusplus': smp.UnetPlusPlus,
@@ -134,7 +136,7 @@ def get_model(
     return model
 
 
-# %% ../../nbs/09_model.ipynb #8bfa958a
+# %% ../../nbs/09_model.ipynb #239bdcf5
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name  (e.g. 'resnet34', 'efficientnet-b0')
     save_path: str,      # local .pth path to write   (e.g. '/data/weights/resnet34.pth')
@@ -166,7 +168,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #aa087660
+# %% ../../nbs/09_model.ipynb #0e45f84f
 def get_param_groups(
     model: nn.Module,        # an smp model (or any model; falls back to one group if no .encoder)
     encoder_lr: float = 1e-4,  # LR for the pretrained encoder
@@ -193,12 +195,12 @@ def unfreeze_encoder(model: nn.Module) -> None:
     for p in model.encoder.parameters():
         p.requires_grad = True
 
-# %% ../../nbs/09_model.ipynb #37a679b6
+# %% ../../nbs/09_model.ipynb #cef8e314
 import timm
 from segmentation_models_pytorch.encoders._base import EncoderMixin
 
 
-# %% ../../nbs/09_model.ipynb #68bdfa9c
+# %% ../../nbs/09_model.ipynb #8a680a51
 class _Reassemble(nn.Module):
     "Project a ViT token feature map to `out_ch` channels, then resize to the target stride."
     def __init__(self, in_ch: int, out_ch: int, scale: float):
@@ -216,7 +218,7 @@ class _Reassemble(nn.Module):
 
 
 
-# %% ../../nbs/09_model.ipynb #6ca1f265
+# %% ../../nbs/09_model.ipynb #fb612214
 class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
     """DINOv3 ViT backbone + DPT-style reassemble, exposed as an smp `EncoderMixin`
     so it can be used as `get_model(arch='dinov3_vit_small', architecture='unet', ...)`.
@@ -281,7 +283,7 @@ class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
 
 
 
-# %% ../../nbs/09_model.ipynb #478ee94a
+# %% ../../nbs/09_model.ipynb #734d4be9
 def _register_dinov3_encoders() -> None:
     "Register the DINOv3 encoders into smp so `list_smp_encoders()` and `get_model()` see them."
     for name, model_name in [
@@ -297,7 +299,7 @@ def _register_dinov3_encoders() -> None:
 _register_dinov3_encoders()
 
 
-# %% ../../nbs/09_model.ipynb #1582bfb1
+# %% ../../nbs/09_model.ipynb #6596c859
 CURATED_ENCODER_ALIASES = {
     'convnext_tiny': 'tu-convnext_tiny',
     'efficientnetv2_s': 'tu-tf_efficientnetv2_s',
@@ -333,7 +335,7 @@ def _validate_encoder_name(encoder_name: str) -> None:
     )
 
 
-# %% ../../nbs/09_model.ipynb #ad2090e8
+# %% ../../nbs/09_model.ipynb #3e370c78
 def list_smp_encoders() -> List[str]:
     """Encoder names for discovery: SMP registry + DINOv3 + curated aliases / `tu-*`.
 
@@ -347,7 +349,7 @@ def list_smp_encoders() -> List[str]:
 
 
 
-# %% ../../nbs/09_model.ipynb #59d91dbf
+# %% ../../nbs/09_model.ipynb #b069bb65
 def get_model(
     arch: str = 'mobilenet_v2',   # encoder name — alias kept for Hydra `model.arch`
     in_channels: int = 3,
@@ -400,7 +402,7 @@ def get_model(
 
 
 
-# %% ../../nbs/09_model.ipynb #d3026df7
+# %% ../../nbs/09_model.ipynb #de0e29e0
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name or curated alias
     save_path: str,      # local .pth path to write
@@ -431,19 +433,27 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #542f56e3
+# %% ../../nbs/09_model.ipynb #aaecace8
 def _group_count(channels: int, want: int = 8) -> int:
     "Largest group count <= `want` that divides `channels` (GroupNorm needs an exact divisor)."
     return max(g for g in range(1, min(want, channels) + 1) if channels % g == 0)
 
+# the one place that knows which norms exist: name -> factory(channels, num_groups); add a norm by adding a row
+_NORM_FACTORIES = {
+    'group': lambda channels, num_groups: nn.GroupNorm(_group_count(channels, num_groups), channels),
+    'batch': lambda channels, num_groups: nn.BatchNorm2d(channels),
+    'instance': lambda channels, num_groups: nn.InstanceNorm2d(channels, affine=True),
+}
+_NORMS = tuple(_NORM_FACTORIES)
+
 def _check_norm(norm, label: str = 'norm') -> None:
-    "Single place that knows which `norm` values exist; `label` names the config key in the error."
-    if norm != 'group':
-        raise NotImplementedError(f"{label}={norm!r} is not implemented yet; only 'group'")
+    "Raise a `ValueError` naming the config key `label` unless `norm` is a key of `_NORM_FACTORIES`."
+    if norm not in _NORM_FACTORIES:
+        raise ValueError(f"{label}={norm!r} is not supported; choose one of {list(_NORM_FACTORIES)}")
 
 def _norm_layer(norm: str, channels: int, num_groups: int) -> nn.Module:
     _check_norm(norm)
-    return nn.GroupNorm(_group_count(channels, num_groups), channels)
+    return _NORM_FACTORIES[norm](channels, num_groups)
 
 class _DoubleConv(nn.Sequential):
     "Conv3x3 -> Norm -> ReLU, twice (Ronneberger block)."
@@ -509,7 +519,41 @@ class CustomUNet(nn.Module):
     def forward(self, x):
         return self.segmentation_head(self.decoder(self.encoder(x)))
 
-# %% ../../nbs/09_model.ipynb #18817feb
+# %% ../../nbs/09_model.ipynb #47d23cb9
+_DEFAULT_ENCODER_DEPTH = 4         # downsamplings when `model.custom_unet.encoder_depth` is absent
+_DEFAULT_BOTTLENECK_MIN_SIZE = 32  # smallest bottleneck side `auto` / `recommend` aim for
+_MIN_AUTO_DEPTH, _MAX_AUTO_DEPTH = 3, 6  # clamp for `auto` / `recommend` (never applied to an explicit int)
+
+def _positive_int(value, label: str) -> int:
+    "Return `value` if it is a real int >= 1 (bool is not accepted); otherwise raise a `ValueError` naming `label`."
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f'{label} must be a positive integer, got {value!r}')
+    return value
+
+def resolve_encoder_depth(
+    depth: Union[int, str],       # 'recommend' | 'auto' | positive int (an int is the user's call and is returned unchanged)
+    crop_size: int,               # model-view crop side the net will see
+    bottleneck_min_size: int = _DEFAULT_BOTTLENECK_MIN_SIZE # smallest bottleneck side `auto` / `recommend` aim for
+) -> int:
+    """Number of downsamplings for `model.custom_unet.encoder_depth`.
+
+    `auto` = floor(log2(crop / min)); `recommend` = the same ratio rounded to the nearest step,
+    so 512 with min 32 gives 4 (512->256->128->64->32). Both are clamped to [3, 6] (`_MIN_AUTO_DEPTH`, `_MAX_AUTO_DEPTH`); an int is returned as-is.
+
+    Example:
+        >>> [resolve_encoder_depth('recommend', c) for c in (64, 512, 4096)]
+        [3, 4, 6]
+    """
+    if isinstance(depth, bool) or not (isinstance(depth, int) or depth in ('recommend', 'auto')):
+        raise ValueError(f"custom_unet.encoder_depth must be a positive integer, 'recommend' or 'auto', got {depth!r}")
+    if isinstance(depth, int):
+        return _positive_int(depth, 'custom_unet.encoder_depth')
+    _positive_int(bottleneck_min_size, 'custom_unet.bottleneck_min_size')
+    ratio = math.log2(max(crop_size, 1) / bottleneck_min_size)
+    steps = math.floor(ratio) if depth == 'auto' else math.floor(ratio + 0.5)
+    return max(_MIN_AUTO_DEPTH, min(_MAX_AUTO_DEPTH, steps))
+
+# %% ../../nbs/09_model.ipynb #7269e9fb
 def _custom_unet_cfg(model_cfg):
     "The `model.custom_unet` block, or an empty dict when absent or null."
     return model_cfg.get('custom_unet', None) or {}
@@ -523,13 +567,15 @@ def _validate_custom_unet_cfg(custom_cfg, crop_size: int):
         raise NotImplementedError("custom_unet.bottleneck other than 'none' is not implemented yet")
     norm = custom_cfg.get('norm', 'group')
     _check_norm(norm, 'custom_unet.norm')
-    depth = custom_cfg.get('encoder_depth', 4)
-    if isinstance(depth, str) and depth in ('recommend', 'auto'):
-        raise NotImplementedError(f"custom_unet.encoder_depth={depth!r} is not implemented yet; use an explicit integer")
-    if isinstance(depth, bool) or not isinstance(depth, int) or depth < 1:
-        raise ValueError(f"custom_unet.encoder_depth must be a positive integer, got {depth!r}")
+    depth = resolve_encoder_depth(custom_cfg.get('encoder_depth', _DEFAULT_ENCODER_DEPTH), crop_size,
+                                 custom_cfg.get('bottleneck_min_size', _DEFAULT_BOTTLENECK_MIN_SIZE))
+    _positive_int(depth, 'custom_unet.encoder_depth')
     if crop_size < 2 ** depth:
         raise ValueError(f'crop_size={crop_size} is too small for encoder_depth={depth} (needs >= {2 ** depth})')
+    if norm == 'batch' and crop_size // 2 ** depth == 1:
+        warnings.warn(f'custom_unet.norm=batch with crop_size={crop_size} and encoder_depth={depth} gives a 1x1 bottleneck; '
+                      'BatchNorm training with batch size 1 fails there. Use a larger crop, a smaller encoder_depth, or norm=group.',
+                      UserWarning)
     return depth, norm
 
 def get_model_from_cfg(
