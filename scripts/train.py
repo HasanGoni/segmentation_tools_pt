@@ -27,6 +27,7 @@ from segmentation_tools_pt.export import export_onnx
 from segmentation_tools_pt.hydra_pipeline import (
     resolve_batch_aug_cfg,
     resolve_boundary_blur_cfg,
+    resolve_crop_size,
     resolve_deterministic,
     resolve_hierarchy_pairs,
     resolve_hierarchy_weight,
@@ -64,7 +65,7 @@ def _export_best_model(
     device = torch.device(
         cfg.train.device if torch.cuda.is_available() else 'cpu'
     )
-    model = get_model_from_cfg(cfg, in_channels, crop_size=cfg.train.crop_size, pretrained=False)
+    model = get_model_from_cfg(cfg, in_channels, crop_size=resolve_crop_size(cfg), pretrained=False)
     ckpt = torch.load(best_path, map_location=device, weights_only=False)
     model.load_state_dict(ckpt['model_state'])
     model = model.to(device)
@@ -78,7 +79,7 @@ def _export_best_model(
         model,
         str(onnx_path),
         in_channels=in_channels,
-        input_size=cfg.train.crop_size,
+        input_size=resolve_crop_size(cfg),
         opset=cfg.export.opset,
         verify=cfg.export.verify,
         task=task,
@@ -169,7 +170,7 @@ def main(cfg: DictConfig) -> None:
     print(f'std : {[round(x, 4) for x in std]}')
 
     if build_only:
-        crop = cfg.train.get('crop_size', cfg.patch.patch_size)
+        crop = resolve_crop_size(cfg)
         print(
             '\nPatch build complete. '
             f'Patch size={cfg.patch.patch_size}, stride={cfg.patch.stride}, '
@@ -185,7 +186,7 @@ def main(cfg: DictConfig) -> None:
 
     print(f'Model weights path: {weights_path}')
 
-    model = get_model_from_cfg(cfg, in_channels, crop_size=cfg.train.crop_size, weights_path=weights_path)
+    model = get_model_from_cfg(cfg, in_channels, crop_size=resolve_crop_size(cfg), weights_path=weights_path)
     arch_label = (
         'custom_unet'
         if cfg.model.get('source', 'smp') == 'custom_unet'
@@ -273,7 +274,7 @@ def main(cfg: DictConfig) -> None:
         encoder_lr=schedule.encoder_lr,
         decoder_lr=schedule.decoder_lr,
         freeze_epochs=schedule.freeze_epochs,
-        crop_size=cfg.train.crop_size,
+        crop_size=resolve_crop_size(cfg),
         n_source_channels=n_source,
         channel_names=channel_names,
         mean=mean,
