@@ -10,7 +10,7 @@ __all__ = ['SMP_ARCHITECTURES', 'CURATED_ENCODER_ALIASES', 'CURATED_TU_ENCODERS'
            'Dinov3ReassembleEncoder', 'resolve_encoder_name', 'CustomUNet', 'resolve_encoder_depth',
            'get_model_from_cfg']
 
-# %% ../../nbs/09_model.ipynb #8606e057
+# %% ../../nbs/09_model.ipynb #4d9ec72e
 from typing import List, Optional, Set, Union
 import math
 from functools import partial
@@ -20,10 +20,10 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/09_model.ipynb #0168f77e
+# %% ../../nbs/09_model.ipynb #0d67687a
 import segmentation_models_pytorch as smp
 
-# %% ../../nbs/09_model.ipynb #3c6566cc
+# %% ../../nbs/09_model.ipynb #7689450f
 SMP_ARCHITECTURES = {
     'unet': smp.Unet,
     'unetplusplus': smp.UnetPlusPlus,
@@ -137,7 +137,7 @@ def get_model(
     return model
 
 
-# %% ../../nbs/09_model.ipynb #32633788
+# %% ../../nbs/09_model.ipynb #5f9fd0ba
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name  (e.g. 'resnet34', 'efficientnet-b0')
     save_path: str,      # local .pth path to write   (e.g. '/data/weights/resnet34.pth')
@@ -169,7 +169,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #322f36cf
+# %% ../../nbs/09_model.ipynb #e3462915
 def get_param_groups(
     model: nn.Module,        # an smp model (or any model; falls back to one group if no .encoder)
     encoder_lr: float = 1e-4,  # LR for the pretrained encoder
@@ -196,12 +196,12 @@ def unfreeze_encoder(model: nn.Module) -> None:
     for p in model.encoder.parameters():
         p.requires_grad = True
 
-# %% ../../nbs/09_model.ipynb #25914df9
+# %% ../../nbs/09_model.ipynb #73af04c4
 import timm
 from segmentation_models_pytorch.encoders._base import EncoderMixin
 
 
-# %% ../../nbs/09_model.ipynb #a67ca010
+# %% ../../nbs/09_model.ipynb #b833a062
 class _Reassemble(nn.Module):
     "Project a ViT token feature map to `out_ch` channels, then resize to the target stride."
     def __init__(self, in_ch: int, out_ch: int, scale: float):
@@ -219,7 +219,7 @@ class _Reassemble(nn.Module):
 
 
 
-# %% ../../nbs/09_model.ipynb #6690f4bd
+# %% ../../nbs/09_model.ipynb #1011e1d4
 class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
     """DINOv3 ViT backbone + DPT-style reassemble, exposed as an smp `EncoderMixin`
     so it can be used as `get_model(arch='dinov3_vit_small', architecture='unet', ...)`.
@@ -284,7 +284,7 @@ class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
 
 
 
-# %% ../../nbs/09_model.ipynb #adbedb31
+# %% ../../nbs/09_model.ipynb #ec20b3b6
 def _register_dinov3_encoders() -> None:
     "Register the DINOv3 encoders into smp so `list_smp_encoders()` and `get_model()` see them."
     for name, model_name in [
@@ -300,7 +300,7 @@ def _register_dinov3_encoders() -> None:
 _register_dinov3_encoders()
 
 
-# %% ../../nbs/09_model.ipynb #1b1ce904
+# %% ../../nbs/09_model.ipynb #63137045
 CURATED_ENCODER_ALIASES = {
     'convnext_tiny': 'tu-convnext_tiny',
     'efficientnetv2_s': 'tu-tf_efficientnetv2_s',
@@ -336,7 +336,7 @@ def _validate_encoder_name(encoder_name: str) -> None:
     )
 
 
-# %% ../../nbs/09_model.ipynb #1f82e6cc
+# %% ../../nbs/09_model.ipynb #34a20282
 def list_smp_encoders() -> List[str]:
     """Encoder names for discovery: SMP registry + DINOv3 + curated aliases / `tu-*`.
 
@@ -350,7 +350,7 @@ def list_smp_encoders() -> List[str]:
 
 
 
-# %% ../../nbs/09_model.ipynb #5b71918c
+# %% ../../nbs/09_model.ipynb #48fd68c8
 def get_model(
     arch: str = 'mobilenet_v2',   # encoder name — alias kept for Hydra `model.arch`
     in_channels: int = 3,
@@ -403,7 +403,7 @@ def get_model(
 
 
 
-# %% ../../nbs/09_model.ipynb #96842ace
+# %% ../../nbs/09_model.ipynb #20196a73
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name or curated alias
     save_path: str,      # local .pth path to write
@@ -434,7 +434,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #5b66cf5e
+# %% ../../nbs/09_model.ipynb #27fe3de7
 def _group_count(channels: int, want: int = 8) -> int:
     "Largest group count <= `want` that divides `channels` (GroupNorm needs an exact divisor)."
     return max(g for g in range(1, min(want, channels) + 1) if channels % g == 0)
@@ -479,12 +479,13 @@ class _ResidualBlock(nn.Module):
         y = self.norm2(self.conv2(self.act(self.norm1(self.conv1(x)))))
         return self.act(y + self.skip(x))
 
-# the one place that knows which block styles exist: name -> block class(in_ch, out_ch, norm, num_groups); add a style by adding a row
-_BLOCKS = {'double': _DoubleConv, 'residual': _ResidualBlock}
-_BLOCK_STYLES = tuple(_BLOCKS)
+# the one place that knows the block styles, so adding one is a one-row change and the validator and the builders can't disagree
+_BLOCK_CLASSES = {'double': _DoubleConv, 'residual': _ResidualBlock}
+_DEFAULT_BLOCK_STYLE = 'double'
+_BLOCK_STYLES = tuple(_BLOCK_CLASSES)
 
 def _check_block_style(block_style, label: str = 'block_style') -> None:
-    _check_choice(block_style, _BLOCKS, label)
+    _check_choice(block_style, _BLOCK_CLASSES, label)
 
 class _CustomUNetEncoder(nn.Module):
     "`depth + 1` stages; `forward` returns the feature map of every stage (shallow to deep)."
@@ -523,7 +524,7 @@ class CustomUNet(nn.Module):
 
     Exposes `.encoder` / `.decoder` / `.segmentation_head` like an smp model, so
     `get_param_groups` and `freeze_encoder` work unchanged. `block_style` picks the conv block
-    (`double` or `residual`, see `_BLOCKS`).
+    (`double` or `residual`, see `_BLOCK_CLASSES`).
 
     Example:
         >>> m = CustomUNet(in_channels=1, num_classes=1, encoder_depth=4)
@@ -532,21 +533,21 @@ class CustomUNet(nn.Module):
     """
     def __init__(self, in_channels: int = 1, num_classes: int = 1, encoder_depth: int = 4,
                  base_channels: int = 32, max_channels: int = 512, norm: str = 'group', num_groups: int = 8,
-                 block_style: str = 'double'):
+                 block_style: str = _DEFAULT_BLOCK_STYLE):
         super().__init__()
         if encoder_depth < 1:
             raise ValueError(f'encoder_depth must be >= 1, got {encoder_depth}')
         _check_norm(norm)
         _check_block_style(block_style)
         channels = [min(base_channels * 2**i, max_channels) for i in range(encoder_depth + 1)]
-        block = partial(_BLOCKS[block_style], norm=norm, num_groups=num_groups)
+        block = partial(_BLOCK_CLASSES[block_style], norm=norm, num_groups=num_groups)
         self.encoder = _CustomUNetEncoder(in_channels, channels, block)
         self.decoder = _CustomUNetDecoder(channels, block)
         self.segmentation_head = nn.Conv2d(channels[0], num_classes, 1)
     def forward(self, x):
         return self.segmentation_head(self.decoder(self.encoder(x)))
 
-# %% ../../nbs/09_model.ipynb #36ddf498
+# %% ../../nbs/09_model.ipynb #aad13d84
 _DEFAULT_ENCODER_DEPTH = 4         # downsamplings when `model.custom_unet.encoder_depth` is absent
 _DEFAULT_BOTTLENECK_MIN_SIZE = 32  # smallest bottleneck side `auto` / `recommend` aim for
 _MIN_AUTO_DEPTH, _MAX_AUTO_DEPTH = 3, 6  # clamp for `auto` / `recommend` (never applied to an explicit int)
@@ -580,14 +581,14 @@ def resolve_encoder_depth(
     steps = math.floor(ratio) if depth == 'auto' else math.floor(ratio + 0.5)
     return max(_MIN_AUTO_DEPTH, min(_MAX_AUTO_DEPTH, steps))
 
-# %% ../../nbs/09_model.ipynb #09659252
+# %% ../../nbs/09_model.ipynb #106732b0
 def _custom_unet_cfg(model_cfg):
     "The `model.custom_unet` block, or an empty dict when absent or null."
     return model_cfg.get('custom_unet', None) or {}
 
 def _validate_custom_unet_cfg(custom_cfg, crop_size: int):
     "Check `model.custom_unet` before building anything; return `(encoder_depth, norm)`."
-    _check_block_style(custom_cfg.get('block_style', 'double'), 'custom_unet.block_style')
+    _check_block_style(custom_cfg.get('block_style', _DEFAULT_BLOCK_STYLE), 'custom_unet.block_style')
     if custom_cfg.get('bottleneck', 'none') != 'none':
         raise NotImplementedError("custom_unet.bottleneck other than 'none' is not implemented yet")
     norm = custom_cfg.get('norm', 'group')
@@ -634,5 +635,5 @@ def get_model_from_cfg(
         return CustomUNet(in_channels=in_channels, num_classes=num_classes, encoder_depth=depth,
                           base_channels=custom_cfg.get('base_channels', 32), max_channels=custom_cfg.get('max_channels', 512),
                           norm=norm, num_groups=custom_cfg.get('num_groups', 8),
-                          block_style=custom_cfg.get('block_style', 'double'))
+                          block_style=custom_cfg.get('block_style', _DEFAULT_BLOCK_STYLE))
     raise ValueError(f"Unknown model.source {source!r}; choose 'smp' or 'custom_unet'")
