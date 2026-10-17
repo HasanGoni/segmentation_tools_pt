@@ -40,8 +40,9 @@ patch:
 # model:
 #   source: smp               # smp (default) | custom_unet
 #   custom_unet:              # used only when source=custom_unet (random-init classic UNet)
-#     encoder_depth: recommend  # recommend | auto | <int>; recommend/auto size the net from train.crop_size, clamped to [3, 6]
-#     bottleneck_min_size: 32   # smallest bottleneck side recommend/auto aim for (512 crop -> 4 downs)
+#     encoder_depth: 4          # int (default 4 when this key is absent) | recommend | auto; opt in with `recommend`/`auto`
+#                                # to size the net from train.crop_size (clamped to [3, 6]), e.g. `encoder_depth: recommend`
+#     bottleneck_min_size: 32   # default 32; only read by recommend/auto: smallest bottleneck side they aim for (512 crop -> 4 downs)
 #     base_channels: 32
 #     max_channels: 512
 #     num_groups: 8           # GroupNorm only; lowered per layer to a divisor of the channel count
