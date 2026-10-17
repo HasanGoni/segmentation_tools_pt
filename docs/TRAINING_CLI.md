@@ -241,7 +241,7 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 ### Custom UNet (`model.source`, issue #61)
 
 `model.source: smp` (default) builds the SMP model from `model.arch`; `model.source=custom_unet` builds the library's own
-double-conv/GroupNorm UNet from `model.custom_unet.*` (`encoder_depth`, `bottleneck_min_size`, `base_channels`, `max_channels`, `norm`, `num_groups`, `block_style`).
+UNet from `model.custom_unet.*` (`encoder_depth`, `bottleneck_min_size`, `base_channels`, `max_channels`, `norm`, `num_groups`, `block_style`). The block style (`double` conv or `residual`) and the norm (`group`, `batch`, `instance`) are selectable; the defaults are `double` and `group`.
 It starts from random weights, so training forces `freeze_epochs=0` and `encoder_lr=decoder_lr` unless you set
 `model.custom_unet.freeze_epochs` / `encoder_lr`. Requires `train.crop_size >= 2**encoder_depth`.
 
