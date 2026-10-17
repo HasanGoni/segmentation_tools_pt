@@ -35,6 +35,17 @@ patch:
 
 # model.* from configs/model/dinov3_vit_small.yaml; in_channels from data_patch (1 for single).
 # Throughput alternative: model=convnext_tiny. Shut-off: model=mobilenet_v2.
+# model.source defaults to smp (the package above). To train a random-init classic UNet instead:
+#   segpt-train configs/train_multilabel_3head.yaml model.source=custom_unet
+# model:
+#   source: smp               # smp (default) | custom_unet
+#   custom_unet:              # used only when source=custom_unet (random-init classic UNet, GroupNorm)
+#     encoder_depth: 4        # explicit integer for now (recommend/auto come later)
+#     base_channels: 32
+#     max_channels: 512
+#     num_groups: 8
+#     # random-init: train() forces freeze_epochs=0 and encoder_lr=decoder_lr (with a warning);
+#     # set freeze_epochs / encoder_lr here to override
 
 train:
   num_classes: 3             # K = len(data.class_names); one sigmoid head per class
