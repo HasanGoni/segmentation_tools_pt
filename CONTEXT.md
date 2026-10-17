@@ -33,7 +33,7 @@ The config switch that says where the model comes from: `smp` (default; a `segme
 _Avoid_: model type, backbone flag
 
 **Custom UNet** (`custom_unet`):
-The library-owned classic UNet (block style selectable via `block_style`, `double` conv by default or `residual`; norm selectable via `norm`, GroupNorm by default; explicit `encoder_depth`) selected with `model.source: custom_unet` and tuned under `model.custom_unet.*`. It starts from random weights, so training gives it no freeze warm-up and the same learning rate for encoder and decoder unless the user sets them.
+The library-owned classic UNet (block style selectable via `block_style`, `double` conv by default or `residual`; norm selectable via `norm`, GroupNorm by default; explicit `encoder_depth`; optional `aspp` bottleneck via `bottleneck`) selected with `model.source: custom_unet` and tuned under `model.custom_unet.*`. It starts from random weights, so training gives it no freeze warm-up and the same learning rate for encoder and decoder unless the user sets them.
 _Avoid_: pretrained encoder, smp UNet, curated encoder
 
 **Freeze warm-up**:
