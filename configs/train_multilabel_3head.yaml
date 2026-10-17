@@ -48,6 +48,8 @@ patch:
 #     num_groups: 8           # GroupNorm only; lowered per layer to a divisor of the channel count
 #     norm: group             # group (default) | batch | instance
 #     block_style: double     # double (default) | residual (conv-norm-relu-conv-norm + skip, then relu)
+#     bottleneck: none    # none (default) | aspp (parallel dilated convs + pooling at the smallest map); attention is #65
+#     aspp_rates: [1, 6, 12, 18]   # only for aspp; rates not smaller than a bottleneck side < 16 px are dropped
 #     # random-init: train() forces freeze_epochs=0 and encoder_lr=decoder_lr (with a warning);
 #     # set freeze_epochs / encoder_lr here to override
 

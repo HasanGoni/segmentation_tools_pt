@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-17
 
+Custom UNet ASPP bottleneck (#64, map #12).
+
+- `nbs/09_model.ipynb`: new `model.custom_unet.bottleneck: none | aspp` and `aspp_rates` (default `[1, 6, 12, 18]`). `_ASPP` = parallel dilated 3x3 convs + a whole-map pooling branch, concat, 1x1 project; keeps `(B, C, H, W)`. The model gets a `.bottleneck` module between encoder and decoder (`nn.Identity` for `none`, so default state_dict keys and output are unchanged). New `trim_aspp_rates(rates, size)`: below 16 px per side, rates not smaller than the side are dropped (fallback `[1]`); the factory applies it with `crop_size // 2**encoder_depth`. `bottleneck: attention` still raises `NotImplementedError` (#65); unknown values raise `ValueError`.
+- `get_param_groups` now puts bottleneck parameters in the decoder group (they would otherwise be in no optimizer group).
+- Tests: shapes for every norm/odd sizes, trim table, `none` identity, config checks before building, optimizer-group coverage, gradients reach every branch, dynamic-H/W ONNX smoke for the three norms.
+- Configs, `choose-model-architecture` skill, `docs/TRAINING_CLI.md`, `CONTEXT.md` and `tutorials/08_custom_unet.ipynb` (section 1d) updated.
+
 Custom UNet residual block style (#63, map #12).
 
 - `nbs/09_model.ipynb`: new `model.custom_unet.block_style: double | residual`. The residual block is Conv3x3-Norm-ReLU-Conv3x3-Norm, add the skip (bias-free 1x1 conv when channels differ, identity otherwise), ReLU; used in encoder and decoder (decoder blocks take the concatenated `2*ch` input). One `_BLOCK_CLASSES` table maps style to block class; unknown values raise `ValueError` early (was `NotImplementedError` for anything but `double`). `bottleneck != none` still raises `NotImplementedError` (#64-#65).
