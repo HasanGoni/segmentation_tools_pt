@@ -33,12 +33,13 @@ from segmentation_tools_pt.hydra_pipeline import (
     resolve_mask_cfg,
     resolve_run_seed,
     resolve_task,
+    resolve_train_schedule,
     run_direct_pipeline,
     run_patch_pipeline,
     validate_data_mode_channels,
     validate_patch_training_sizes,
 )
-from segmentation_tools_pt.model import get_model_from_cfg, resolve_train_schedule
+from segmentation_tools_pt.model import get_model_from_cfg
 from segmentation_tools_pt.train import build_default_callbacks, train
 
 

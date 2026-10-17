@@ -86,7 +86,8 @@ Unknown **non-`tu-*`** names hard-error.
 
 ## Library anchors
 
-- `src/segmentation_tools_pt/model.py` — `get_model_from_cfg`, `CustomUNet`, `resolve_train_schedule`, `get_model`, `resolve_encoder_name`, `list_smp_architectures`,
+- `src/segmentation_tools_pt/model.py` — `get_model_from_cfg`, `CustomUNet`, `get_model`, `resolve_encoder_name`, `list_smp_architectures`,
   `list_smp_encoders`, `download_encoder_weights`, `CURATED_ENCODER_ALIASES`.
+- `src/segmentation_tools_pt/hydra_pipeline.py` — `resolve_train_schedule` (returns `TrainSchedule`; neutralises freeze/LR for `custom_unet`).
 - Hydra packages: `configs/model/{mobilenet_v2,dinov3_vit_small,convnext_tiny,efficientnetv2_s}.yaml`.
 - Source notebook: `nbs/09_model.ipynb`; tutorial: `tutorials/08_custom_unet.ipynb`.
