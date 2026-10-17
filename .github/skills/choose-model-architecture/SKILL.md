@@ -13,7 +13,30 @@ weights strategy. Discover curated names with `list_smp_architectures()` / `list
 Prefer **Hydra encoder preset packages** under `configs/model/` when switching backbones — they set
 `model.*` only (not freeze/LR). Shut-off back to the library default is `model=mobilenet_v2`.
 
-## Head (`model.architecture`)
+## Source (`model.source`): SMP or the library's own UNet
+
+| `model.source` | Use when |
+|---|---|
+| `smp` (default) | Pretrained encoder (mobilenet_v2, DINOv3, convnext…) — the right default, esp. under domain shift |
+| `custom_unet` | You want a small, fully library-owned classic UNet (double-conv + GroupNorm), no SMP/timm dependency, or a baseline to compare against |
+
+`custom_unet` is **random-init**: `pretrained` / `weights_path` are ignored (a warning is raised), and
+`train()` uses `freeze_epochs=0` with `encoder_lr = decoder_lr` instead of the pretrained-encoder warm-up
+(override via `model.custom_unet.freeze_epochs` / `model.custom_unet.encoder_lr`). Pretrained SMP / DINOv3
+stays the stronger choice for layout/domain shift until a warm-start option exists.
+
+```bash
+segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.encoder_depth=4 \
+    model.pretrained=false model.weights_path=null train.crop_size=512
+```
+
+Knobs (`model.custom_unet.*`): `encoder_depth` (explicit int, `train.crop_size >= 2**depth`), `base_channels` (32),
+`max_channels` (512), `num_groups` (8). Not implemented yet and rejected with a clear error: `encoder_depth: recommend|auto`,
+`block_style: residual`, `norm: batch|instance`, `bottleneck: aspp|attention` (tickets #62–#65). `in_channels` and
+`train.num_classes` still come from the data config, so the choose-channels decision applies unchanged.
+Hands-on: `tutorials/08_custom_unet.ipynb`.
+
+## Head (`model.architecture`) — `source: smp` only
 
 | Head | Use when |
 |---|---|
@@ -55,6 +78,7 @@ Unknown **non-`tu-*`** names hard-error.
 ## What this skill emits
 
 - Prefer a Hydra defaults line: `- model: <package>` (or CLI `model=<package>`).
+- For `custom_unet`: `model.source: custom_unet` plus `model.custom_unet.{encoder_depth,base_channels,max_channels,num_groups}`.
 - Or the `model:` block (`architecture`, `arch`, `in_channels`, `pretrained`, `weights_path`) —
   `in_channels` must agree with the choose-channels decision.
 - For Chip/Void/Lifted recipes: default package `dinov3_vit_small`; throughput alt `convnext_tiny`;
@@ -62,7 +86,7 @@ Unknown **non-`tu-*`** names hard-error.
 
 ## Library anchors
 
-- `src/segmentation_tools_pt/model.py` — `get_model`, `resolve_encoder_name`, `list_smp_architectures`,
+- `src/segmentation_tools_pt/model.py` — `get_model_from_cfg`, `CustomUNet`, `resolve_train_schedule`, `get_model`, `resolve_encoder_name`, `list_smp_architectures`,
   `list_smp_encoders`, `download_encoder_weights`, `CURATED_ENCODER_ALIASES`.
 - Hydra packages: `configs/model/{mobilenet_v2,dinov3_vit_small,convnext_tiny,efficientnetv2_s}.yaml`.
-- Source notebook: `nbs/09_model.ipynb`.
+- Source notebook: `nbs/09_model.ipynb`; tutorial: `tutorials/08_custom_unet.ipynb`.

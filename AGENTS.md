@@ -58,7 +58,7 @@ segmentation_tools_pt/
 ├── docs/         # TRAINING_CLI.md, agents/ (issue-tracker, domain, repo-guide), adr/, superpowers/specs/
 ├── hpc/          # submit.sh (bsub job script) + README (HPC guide, large-dataset strategies)
 ├── tutorials/    # 01 walkthrough, 02 next steps, 03 inference+top-losses, 03 testing skills,
-│                 # 04 augmentation playground, 05 activation semantics
+│                 # 04 augmentation playground, 05 activation semantics, 08 custom UNet
 ├── outputs/      # Hydra run outputs (gitignored)
 ├── CONTEXT.md    # domain vocabulary (single source of truth for shared language)
 └── AGENTS.md     # ← this file
