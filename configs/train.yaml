@@ -15,6 +15,14 @@ data:
 # model.* comes from configs/model/<name>.yaml (architecture, arch, pretrained, weights_path).
 # data_patch supplies model.in_channels. Override any field on the CLI, e.g. model.pretrained=true.
 
+model:
+  source: smp               # smp (default) | custom_unet  -> segpt-train ... model.source=custom_unet
+  # custom_unet:            # used only when source=custom_unet (random-init classic UNet, GroupNorm)
+  #   encoder_depth: 4      # explicit integer for now (recommend/auto come later)
+  #   base_channels: 32
+  #   max_channels: 512
+  #   num_groups: 8
+
 train:
   epochs: 100
   batch_size: 16
