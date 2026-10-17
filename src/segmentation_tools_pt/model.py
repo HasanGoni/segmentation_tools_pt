@@ -10,7 +10,7 @@ __all__ = ['SMP_ARCHITECTURES', 'CURATED_ENCODER_ALIASES', 'CURATED_TU_ENCODERS'
            'Dinov3ReassembleEncoder', 'resolve_encoder_name', 'CustomUNet', 'get_model_from_cfg',
            'resolve_train_schedule']
 
-# %% ../../nbs/09_model.ipynb #3ce025b8
+# %% ../../nbs/09_model.ipynb #165da580
 from typing import List, Optional, Set
 import warnings
 
@@ -18,10 +18,10 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/09_model.ipynb #a833b944
+# %% ../../nbs/09_model.ipynb #24476e8a
 import segmentation_models_pytorch as smp
 
-# %% ../../nbs/09_model.ipynb #facf47af
+# %% ../../nbs/09_model.ipynb #b174265f
 SMP_ARCHITECTURES = {
     'unet': smp.Unet,
     'unetplusplus': smp.UnetPlusPlus,
@@ -135,7 +135,7 @@ def get_model(
     return model
 
 
-# %% ../../nbs/09_model.ipynb #e295c19b
+# %% ../../nbs/09_model.ipynb #df14d6d3
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name  (e.g. 'resnet34', 'efficientnet-b0')
     save_path: str,      # local .pth path to write   (e.g. '/data/weights/resnet34.pth')
@@ -167,7 +167,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #8c326e21
+# %% ../../nbs/09_model.ipynb #67c9f4e9
 def get_param_groups(
     model: nn.Module,        # an smp model (or any model; falls back to one group if no .encoder)
     encoder_lr: float = 1e-4,  # LR for the pretrained encoder
@@ -194,12 +194,12 @@ def unfreeze_encoder(model: nn.Module) -> None:
     for p in model.encoder.parameters():
         p.requires_grad = True
 
-# %% ../../nbs/09_model.ipynb #4ddcc355
+# %% ../../nbs/09_model.ipynb #787a58e6
 import timm
 from segmentation_models_pytorch.encoders._base import EncoderMixin
 
 
-# %% ../../nbs/09_model.ipynb #c62f4a82
+# %% ../../nbs/09_model.ipynb #829bacf2
 class _Reassemble(nn.Module):
     "Project a ViT token feature map to `out_ch` channels, then resize to the target stride."
     def __init__(self, in_ch: int, out_ch: int, scale: float):
@@ -217,7 +217,7 @@ class _Reassemble(nn.Module):
 
 
 
-# %% ../../nbs/09_model.ipynb #303f3322
+# %% ../../nbs/09_model.ipynb #7dd17f9d
 class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
     """DINOv3 ViT backbone + DPT-style reassemble, exposed as an smp `EncoderMixin`
     so it can be used as `get_model(arch='dinov3_vit_small', architecture='unet', ...)`.
@@ -282,7 +282,7 @@ class Dinov3ReassembleEncoder(nn.Module, EncoderMixin):
 
 
 
-# %% ../../nbs/09_model.ipynb #c99abb56
+# %% ../../nbs/09_model.ipynb #996b8f8b
 def _register_dinov3_encoders() -> None:
     "Register the DINOv3 encoders into smp so `list_smp_encoders()` and `get_model()` see them."
     for name, model_name in [
@@ -298,7 +298,7 @@ def _register_dinov3_encoders() -> None:
 _register_dinov3_encoders()
 
 
-# %% ../../nbs/09_model.ipynb #f8d448a4
+# %% ../../nbs/09_model.ipynb #6a1b3157
 CURATED_ENCODER_ALIASES = {
     'convnext_tiny': 'tu-convnext_tiny',
     'efficientnetv2_s': 'tu-tf_efficientnetv2_s',
@@ -334,7 +334,7 @@ def _validate_encoder_name(encoder_name: str) -> None:
     )
 
 
-# %% ../../nbs/09_model.ipynb #2db977dd
+# %% ../../nbs/09_model.ipynb #6a7c22bb
 def list_smp_encoders() -> List[str]:
     """Encoder names for discovery: SMP registry + DINOv3 + curated aliases / `tu-*`.
 
@@ -348,7 +348,7 @@ def list_smp_encoders() -> List[str]:
 
 
 
-# %% ../../nbs/09_model.ipynb #9554189f
+# %% ../../nbs/09_model.ipynb #f9be9fe0
 def get_model(
     arch: str = 'mobilenet_v2',   # encoder name — alias kept for Hydra `model.arch`
     in_channels: int = 3,
@@ -401,7 +401,7 @@ def get_model(
 
 
 
-# %% ../../nbs/09_model.ipynb #7216932e
+# %% ../../nbs/09_model.ipynb #ef5aafcf
 def download_encoder_weights(
     encoder_name: str,   # smp encoder name or curated alias
     save_path: str,      # local .pth path to write
@@ -432,7 +432,7 @@ def download_encoder_weights(
     del tmp
 
 
-# %% ../../nbs/09_model.ipynb #4bba0104
+# %% ../../nbs/09_model.ipynb #fcdbd919
 def _group_count(channels: int, want: int = 8) -> int:
     "Largest group count <= `want` that divides `channels` (GroupNorm needs an exact divisor)."
     return max(g for g in range(1, min(want, channels) + 1) if channels % g == 0)
@@ -473,9 +473,9 @@ class _CustomUNetDecoder(nn.Module):
     "Mirror of the encoder: upsample, concat the skip, double conv. Returns the full-resolution map."
     def __init__(self, channels, norm, num_groups):
         super().__init__()
-        n = len(channels) - 1
-        self.ups = nn.ModuleList([nn.ConvTranspose2d(channels[i + 1], channels[i], 2, stride=2) for i in reversed(range(n))])
-        self.blocks = nn.ModuleList([_DoubleConv(2 * channels[i], channels[i], norm, num_groups) for i in reversed(range(n))])
+        num_ups = len(channels) - 1
+        self.ups = nn.ModuleList([nn.ConvTranspose2d(channels[i + 1], channels[i], 2, stride=2) for i in reversed(range(num_ups))])
+        self.blocks = nn.ModuleList([_DoubleConv(2 * channels[i], channels[i], norm, num_groups) for i in reversed(range(num_ups))])
     def forward(self, feats):
         x = feats[-1]
         for up, block, skip in zip(self.ups, self.blocks, reversed(feats[:-1])):
@@ -509,21 +509,21 @@ class CustomUNet(nn.Module):
     def forward(self, x):
         return self.segmentation_head(self.decoder(self.encoder(x)))
 
-# %% ../../nbs/09_model.ipynb #1f1ff36d
+# %% ../../nbs/09_model.ipynb #7cb54bde
 def _custom_unet_cfg(model_cfg):
     "The `model.custom_unet` block, or an empty dict when absent or null."
     return model_cfg.get('custom_unet', None) or {}
 
-def _validate_custom_unet_cfg(c, crop_size: int):
+def _validate_custom_unet_cfg(custom_cfg, crop_size: int):
     "Check `model.custom_unet` before building anything; return `(encoder_depth, norm)`."
-    block = c.get('block_style', 'double')
+    block = custom_cfg.get('block_style', 'double')
     if block != 'double':
         raise NotImplementedError(f"custom_unet.block_style={block!r} is not implemented yet; only 'double'")
-    if c.get('bottleneck', 'none') != 'none':
+    if custom_cfg.get('bottleneck', 'none') != 'none':
         raise NotImplementedError("custom_unet.bottleneck other than 'none' is not implemented yet")
-    norm = c.get('norm', 'group')
+    norm = custom_cfg.get('norm', 'group')
     _check_norm(norm, 'custom_unet.norm')
-    depth = c.get('encoder_depth', 4)
+    depth = custom_cfg.get('encoder_depth', 4)
     if isinstance(depth, str) and depth in ('recommend', 'auto'):
         raise NotImplementedError(f"custom_unet.encoder_depth={depth!r} is not implemented yet; use an explicit integer")
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 1:
@@ -544,28 +544,28 @@ def get_model_from_cfg(
     Example:
         >>> m = get_model_from_cfg(cfg, in_channels=1, crop_size=64)  # doctest: +SKIP
     """
-    mcfg = cfg.model
-    source = mcfg.get('source', 'smp')
+    model_cfg = cfg.model
+    source = model_cfg.get('source', 'smp')
     if pretrained is None:
-        pretrained = bool(mcfg.get('pretrained', False))
+        pretrained = bool(model_cfg.get('pretrained', False))
     num_classes = cfg.train.num_classes
     if source == 'smp':
-        kw = dict(arch=mcfg.arch, in_channels=in_channels, num_classes=num_classes,
-                  pretrained=pretrained, architecture=mcfg.get('architecture', 'unet'))
+        smp_kwargs = dict(arch=model_cfg.arch, in_channels=in_channels, num_classes=num_classes,
+                  pretrained=pretrained, architecture=model_cfg.get('architecture', 'unet'))
         if weights_path is not None:
-            kw['weights_path'] = weights_path
-        return get_model(**kw)
+            smp_kwargs['weights_path'] = weights_path
+        return get_model(**smp_kwargs)
     if source == 'custom_unet':
-        c = _custom_unet_cfg(mcfg)
-        depth, norm = _validate_custom_unet_cfg(c, crop_size)
+        custom_cfg = _custom_unet_cfg(model_cfg)
+        depth, norm = _validate_custom_unet_cfg(custom_cfg, crop_size)
         if pretrained or weights_path is not None:
             warnings.warn('model.source=custom_unet is random-init; pretrained/weights_path are ignored', UserWarning)
         return CustomUNet(in_channels=in_channels, num_classes=num_classes, encoder_depth=depth,
-                          base_channels=c.get('base_channels', 32), max_channels=c.get('max_channels', 512),
-                          norm=norm, num_groups=c.get('num_groups', 8))
+                          base_channels=custom_cfg.get('base_channels', 32), max_channels=custom_cfg.get('max_channels', 512),
+                          norm=norm, num_groups=custom_cfg.get('num_groups', 8))
     raise ValueError(f"Unknown model.source {source!r}; choose 'smp' or 'custom_unet'")
 
-# %% ../../nbs/09_model.ipynb #f0df8744
+# %% ../../nbs/09_model.ipynb #31e321f9
 def resolve_train_schedule(
     cfg,   # Hydra config with `model.*` and `train.{freeze_epochs,encoder_lr,decoder_lr}`
 ) -> tuple:
@@ -578,18 +578,18 @@ def resolve_train_schedule(
     Example:
         >>> resolve_train_schedule(cfg)  # doctest: +SKIP
     """
-    t = cfg.train
-    freeze, enc_lr, dec_lr = t.freeze_epochs, t.encoder_lr, t.decoder_lr
+    train_cfg = cfg.train
+    freeze, enc_lr, dec_lr = train_cfg.freeze_epochs, train_cfg.encoder_lr, train_cfg.decoder_lr
     if cfg.model.get('source', 'smp') != 'custom_unet':
         return freeze, enc_lr, dec_lr
-    c = _custom_unet_cfg(cfg.model)
-    new_freeze = c.get('freeze_epochs', None)
-    new_enc = c.get('encoder_lr', None)
-    new_freeze = 0 if new_freeze is None else new_freeze
-    new_enc = dec_lr if new_enc is None else new_enc
-    if (new_freeze, new_enc) != (freeze, enc_lr):
+    custom_cfg = _custom_unet_cfg(cfg.model)
+    freeze_out = custom_cfg.get('freeze_epochs', None)
+    encoder_lr_out = custom_cfg.get('encoder_lr', None)
+    freeze_out = 0 if freeze_out is None else freeze_out
+    encoder_lr_out = dec_lr if encoder_lr_out is None else encoder_lr_out
+    if (freeze_out, encoder_lr_out) != (freeze, enc_lr):
         warnings.warn(
-            f'model.source=custom_unet is random-init: using freeze_epochs={new_freeze} and encoder_lr={new_enc} '
+            f'model.source=custom_unet is random-init: using freeze_epochs={freeze_out} and encoder_lr={encoder_lr_out} '
             f'instead of train.freeze_epochs={freeze} / train.encoder_lr={enc_lr}. '
             'Set model.custom_unet.freeze_epochs / model.custom_unet.encoder_lr to override.', UserWarning)
-    return new_freeze, new_enc, dec_lr
+    return freeze_out, encoder_lr_out, dec_lr
