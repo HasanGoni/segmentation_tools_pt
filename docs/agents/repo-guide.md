@@ -226,6 +226,7 @@ model:
   in_channels: 3          # must match data_mode (single→1, single_repeat_3→3, etc.)
   pretrained: true
   weights_path: /path/to/mobilenet_v2.pth  # local .pth for air-gapped HPC; null = download
+  # source: smp | custom_unet  (library-owned random-init UNet; options in docs/TRAINING_CLI.md, "Custom UNet")
 
 train:
   num_classes: 1          # 1 = binary sigmoid; >1 = softmax
