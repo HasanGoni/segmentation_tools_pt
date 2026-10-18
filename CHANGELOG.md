@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-18
 
+Custom UNet clean-ups from the #64/#65 reviews (#97, replaces #94, map #12). No change for valid configs: parameter counts and state_dict keys are pinned by a test for every bottleneck and block style.
+
+- `get_param_groups` no longer probes for `.bottleneck`: a model may define `decoder_side_parameters()` (`CustomUNet` returns decoder, head, bottleneck, in that order); models without it (SMP, DINOv3) keep decoder + head.
+- One `_BOTTLENECKS` table row per bottleneck (`build` and `prepare`) replaces the `== 'aspp'` / `== 'attention'` branches in the class, the validator and the factory; unused knobs are still not checked. Adding a bottleneck is one row (tested).
+- A list, dict or `None` for `bottleneck`, `norm` or `block_style` now raises `ValueError` naming the key (was `TypeError` for lists and dicts).
+- `_DEFAULT_BASE_CHANNELS` / `_DEFAULT_MAX_CHANNELS` replace three copies of the literals; docstring, comment and test hygiene (duplicated gradient/group checks are now shared or covered once for all bottlenecks).
+
 Custom UNet config examples, skill and docs (#66, map #12).
 
 - `configs/train_multilabel_3head.yaml`: `model.source: smp` is now a real key, so the documented `model.source=custom_unet` override works (it failed with "Key 'source' is not in struct" because that config takes its model from a package). `train.yaml` already had it.
