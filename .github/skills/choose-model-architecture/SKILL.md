@@ -35,8 +35,8 @@ Knobs (`model.custom_unet.*`): `encoder_depth` (`recommend` | `auto` | explicit 
 `bottleneck_min_size` (32), `base_channels` (32), `max_channels` (512), `norm` (`group` | `batch` | `instance`), `num_groups` (8, GroupNorm only).
 `recommend`/`auto` read `train.crop_size`: a 512 crop gives 4 downs; `auto` is `floor(log2(crop/min))`, `recommend` rounds to the nearest step; both clamped to [3, 6].
 `batch` norm misbehaves with tiny batches (stats come from the batch), so prefer `group` or `instance` there. `block_style` (`double` default | `residual`: Conv-Norm-ReLU-Conv-Norm plus a skip, with a 1x1 conv when channels change; same output shape, a few more parameters, works with every norm).
-`bottleneck` (`none` default | `aspp`): `aspp` adds parallel dilated 3x3 convs (`aspp_rates`, default `[1, 6, 12, 18]`) plus a whole-map pooling branch on the smallest feature map, for layout-heavy images where wide context matters; output shape is unchanged and it adds parameters. On a bottleneck under 16 px per side, rates not smaller than the side are dropped automatically.
-Not implemented yet and rejected with a clear error: `bottleneck: attention` (ticket #65). `in_channels` and
+`bottleneck` (`none` default | `aspp` | `attention`; one value, so they are mutually exclusive): `aspp` adds parallel dilated 3x3 convs (`aspp_rates`, default `[1, 6, 12, 18]`) plus a whole-map pooling branch on the smallest feature map, for layout-heavy images where wide context matters; output shape is unchanged and it adds parameters. On a bottleneck under 16 px per side, rates not smaller than the side are dropped automatically.
+`attention` (`attention_heads`, default 4, must divide the bottleneck channel count, which is `min(base_channels * 2**encoder_depth, max_channels)`; a bad value is rejected before the model is built) adds one self-attention layer with a residual add over the smallest feature map, for global context when a defect can only be judged from the whole layout. Output shape is unchanged. Memory grows with the square of the bottleneck pixel count: a 512 crop at depth 4 is 32x32 = 1024 tokens (fine), at depth 3 it is 64x64 = 4096 tokens (heavy), so keep the bottleneck small. It exports to FP32 ONNX, also with dynamic H/W. `in_channels` and
 `train.num_classes` still come from the data config, so the choose-channels decision applies unchanged.
 Hands-on: `tutorials/08_custom_unet.ipynb`.
 
@@ -82,7 +82,7 @@ Unknown **non-`tu-*`** names hard-error.
 ## What this skill emits
 
 - Prefer a Hydra defaults line: `- model: <package>` (or CLI `model=<package>`).
-- For `custom_unet`: `model.source: custom_unet` plus `model.custom_unet.{encoder_depth,bottleneck_min_size,base_channels,max_channels,norm,num_groups,block_style,bottleneck,aspp_rates}`.
+- For `custom_unet`: `model.source: custom_unet` plus `model.custom_unet.{encoder_depth,bottleneck_min_size,base_channels,max_channels,norm,num_groups,block_style,bottleneck,aspp_rates,attention_heads}`.
 - Or the `model:` block (`architecture`, `arch`, `in_channels`, `pretrained`, `weights_path`) —
   `in_channels` must agree with the choose-channels decision.
 - For Chip/Void/Lifted recipes: default package `dinov3_vit_small`; throughput alt `convnext_tiny`;
