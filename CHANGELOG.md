@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-10-18
+
+Custom UNet attention bottleneck (#65, map #12).
+
+- `nbs/09_model.ipynb`: `model.custom_unet.bottleneck` now accepts `attention` (Step 7). New `_AttentionBottleneck(channels, heads)`: flatten the map to `H*W` tokens, pre-LayerNorm, one q/k/v projection, `scaled_dot_product_attention`, output projection, residual add, fold back; keeps `(B, C, H, W)`. New `attention_heads` (default 4) must be a positive int that divides the bottleneck channels `min(base_channels * 2**encoder_depth, max_channels)`; a bad value raises `ValueError` naming `custom_unet.attention_heads` before any model is built (the `CustomUNet` constructor checks it too). `bottleneck` stays one value, so `aspp` and `attention` are exclusive; `aspp_rates` is ignored for attention and `attention_heads` for the others (unused knobs are not validated; `CustomUNet` now only checks `aspp_rates` when `bottleneck='aspp'`). The `NotImplementedError` branch and `_PLANNED_BOTTLENECKS` are gone; `_BOTTLENECK_BUILDERS` builders take `(channels, rates, heads, norm, num_groups)`.
+- Memory: cost is O(tokens^2), tokens = `(crop // 2**encoder_depth)^2`, i.e. `(H*W)^2` of the bottleneck map (512 crop, depth 4 = 1024 tokens fine; depth 3 = 4096 tokens heavy). No warning is raised.
+- ONNX (FP32, opset 18, `dynamo=False`): fixed-size export matches onnxruntime to < 1e-4, and export with dynamic H/W also works and matches at other sizes (32, 48, 37x41). This needed the explicit `scaled_dot_product_attention` form: with `nn.MultiheadAttention` the dynamic-H/W graph runs only at the traced size (onnxruntime fails with a Reshape error elsewhere; reproduced in a test, and the attention model also goes through `export_onnx`). Legacy exporter (`dynamo=False`) is the one verified. There is no positional encoding; layout comes from the neighbouring conv features.
+- Tests: shapes for odd / non-square / 1x1 maps, every block style x norm, heads-must-divide checks before building, mutual exclusivity and ignored knobs, `none` unchanged, optimizer-group coverage and gradients, positions really mix, ONNX smoke (fixed + dynamic). The old `NotImplementedError` assertions now expect the new behaviour.
+- Configs, `choose-model-architecture` skill, `docs/TRAINING_CLI.md`, `CONTEXT.md` and `tutorials/08_custom_unet.ipynb` (section 1e) updated.
+
 ## 2026-10-17
 
 Custom UNet ASPP bottleneck (#64, map #12).
