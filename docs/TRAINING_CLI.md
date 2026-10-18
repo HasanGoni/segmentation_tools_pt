@@ -238,29 +238,74 @@ Included by both `build.yaml` and `train.yaml`. Edit here (or override in your p
 
 **Encoder freeze** (`train.freeze_epochs`): `0` = train the encoder from epoch 0; `N > 0` = decoder warm-up — encoder frozen for epochs `0..N-1`, unfrozen at epoch `N`; `-1` = encoder frozen for the whole run (only decoder + head train — good for DINOv3/ViT encoders or small datasets that overfit a tuned backbone).
 
-### Custom UNet (`model.source`, issue #61)
+### Custom UNet (`model.source`)
 
-`model.source: smp` (default) builds the SMP model from `model.arch`; `model.source=custom_unet` builds the library's own
-UNet from `model.custom_unet.*` (`encoder_depth`, `bottleneck_min_size`, `base_channels`, `max_channels`, `norm`, `num_groups`, `block_style`, `bottleneck`, `aspp_rates`, `attention_heads`). The block style (`double` conv or `residual`) and the norm (`group`, `batch`, `instance`) are selectable; the defaults are `double` and `group`.
-It starts from random weights, so training forces `freeze_epochs=0` and `encoder_lr=decoder_lr` unless you set
-`model.custom_unet.freeze_epochs` / `encoder_lr`. Requires `train.crop_size >= 2**encoder_depth`.
+`model.source: smp` (default) builds the SMP model from `model.arch`. `model.source=custom_unet` builds the library's own
+classic UNet from `model.custom_unet.*`. Hands-on: `tutorials/08_custom_unet.ipynb`.
 
-`encoder_depth` is the number of "downs" (how many times the image is halved on the way down) and defaults to 4 when absent; it can also be
-`recommend`, `auto` or an integer (#62). The "bottleneck" is the smallest feature map, in the middle of the UNet, after the last halving. `recommend` and `auto` read `train.crop_size`: `auto` is
-`floor(log2(crop / bottleneck_min_size))`, `recommend` rounds the same ratio to the nearest step (a 512 crop with the default
-`bottleneck_min_size: 32` gives 4 downs: 512 -> 256 -> 128 -> 64 -> 32); both are clamped to [3, 6]. An integer is used as given.
-`norm` is `group` (default; the group count is lowered per layer to divide that layer's channels), `batch` or `instance`.
-BatchNorm takes its statistics from the batch, so train with batch size >= 2 and check eval results separately.
+**It starts from random weights.** `pretrained` / `weights_path` are ignored (with a warning), and training forces
+`freeze_epochs=0` and `encoder_lr=decoder_lr` unless you set `model.custom_unet.freeze_epochs` / `encoder_lr`. A pretrained
+SMP or DINOv3 encoder stays the stronger choice for layout or domain shift until a warm-start option exists. Use
+`custom_unet` for a small library-owned model with no SMP/timm dependency, or as a baseline to compare against.
+
+| `model.custom_unet.*` | Values (default first) | Meaning |
+|---|---|---|
+| `encoder_depth` | `4`, `recommend`, `auto`, or an integer | "Downs": how many times the image is halved. Needs `train.crop_size >= 2**depth` |
+| `bottleneck_min_size` | `32` | Smallest bottleneck side that `recommend` / `auto` aim for |
+| `base_channels`, `max_channels` | `32`, `512` | Channels double per stage, capped at `max_channels` |
+| `norm` | `group`, `batch`, `instance` | `num_groups` (8) is GroupNorm only and is lowered per layer to divide the channels |
+| `block_style` | `double`, `residual` | Two convs per block, or Conv-Norm-ReLU-Conv-Norm plus a skip (a 1x1 conv carries it when channels change) |
+| `bottleneck` | `none`, `aspp`, `attention` | One value, so `aspp` and `attention` cannot be combined |
+| `aspp_rates` | `[1, 6, 12, 18]` | `aspp` only |
+| `attention_heads` | `4` | `attention` only; must divide the bottleneck channels |
+
+The "bottleneck" is the smallest feature map, in the middle of the UNet after the last halving. Unused knobs are not
+checked (for example `aspp_rates` with `bottleneck: attention`). Wrong values are rejected before any model is built.
+
+Switch on a source and add the options you want. `+` is needed for keys that are not in the YAML (the commented
+`custom_unet:` block in `configs/train.yaml` and `configs/train_multilabel_3head.yaml` lists them all; uncomment it
+instead of using `+` if you prefer editing the file). Every command below is run by the test in `nbs/09_model.ipynb`.
 
 ```bash
-segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.encoder_depth=recommend +model.custom_unet.norm=group model.pretrained=false model.weights_path=null
+# plain custom UNet, depth chosen from the crop (also: encoder_depth=auto, or an integer)
+segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.encoder_depth=recommend \
+    model.pretrained=false model.weights_path=null
+
+# residual blocks, or another norm
+segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.block_style=residual +model.custom_unet.norm=instance
+
+# ASPP bottleneck
+segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.bottleneck=aspp
+
+# attention bottleneck
+segpt-train configs/train.yaml model.source=custom_unet +model.custom_unet.bottleneck=attention +model.custom_unet.attention_heads=4
+
+# the 3-head recipe: its DINOv3 package says pretrained: true, so switch that off
+segpt-train configs/train_multilabel_3head.yaml model.source=custom_unet model.pretrained=false
 ```
 
-Hands-on: `tutorials/08_custom_unet.ipynb`. `block_style: residual` (#63) swaps each double conv for a residual block (Conv-Norm-ReLU-Conv-Norm, add the input, ReLU; a bias-free 1x1 conv carries the input when the channel count changes), e.g. `+model.custom_unet.block_style=residual`. Works with every `norm`; an unknown value is rejected up front.
+**Depth.** `auto` is `floor(log2(crop / bottleneck_min_size))`; `recommend` rounds the same ratio to the nearest step
+(a 512 crop with the default 32 gives 4 downs: 512 -> 256 -> 128 -> 64 -> 32). Both are clamped to [3, 6]; an integer is
+used as given.
 
-`bottleneck: aspp` (#64) runs parallel dilated 3x3 convs (`aspp_rates`, default `[1, 6, 12, 18]`) plus a whole-map pooling branch on the bottleneck, concatenates them and projects back with a 1x1 conv, so the output shape is unchanged: `+model.custom_unet.bottleneck=aspp`. When the bottleneck is smaller than 16 px per side (`train.crop_size // 2**encoder_depth`), rates that are not smaller than the side are dropped (falling back to `[1]`). `bottleneck: none` (default) changes nothing.
+**Norm.** BatchNorm takes its statistics from the batch, so train with batch size >= 2 and check eval results
+separately. A 1x1 bottleneck with `batch` warns.
 
-`bottleneck: attention` (#65) puts one self-attention layer (LayerNorm, q/k/v, residual add) over the bottleneck positions, so every position can see the whole map; the output shape is unchanged: `+model.custom_unet.bottleneck=attention model.custom_unet.attention_heads=4`. `attention_heads` (default 4) must divide the bottleneck channel count, `min(base_channels * 2**encoder_depth, max_channels)`; otherwise training fails up front naming `custom_unet.attention_heads`. `bottleneck` is a single value, so `aspp` and `attention` cannot be combined; `aspp_rates` is ignored for attention and `attention_heads` for the others. Memory grows with the square of the number of bottleneck pixels (`H*W`): a 512 crop at `encoder_depth: 4` is a 32x32 map = 1024 tokens (fine), at `encoder_depth: 3` it is 64x64 = 4096 tokens (heavy). ONNX: the FP32 export is verified against onnxruntime both at a fixed crop and with dynamic H/W (the layer uses `scaled_dot_product_attention`; `nn.MultiheadAttention` would pin the graph to the traced size; verified with the legacy exporter, `dynamo=False`, opset 18, and through `export_onnx`). The layer has no positional encoding, so layout comes from the neighbouring conv features, and its memory is O(tokens^2) with tokens = `(crop // 2**encoder_depth)^2`.
+**ASPP** runs parallel dilated 3x3 convs (`aspp_rates`) plus a whole-map pooling branch on the bottleneck, concatenates
+them and projects back with a 1x1 conv, so the output shape is unchanged. When the bottleneck is smaller than 16 px per
+side (`train.crop_size // 2**encoder_depth`), rates that are not smaller than the side are dropped (falling back to
+`[1]`).
+
+**Attention** puts one self-attention layer (LayerNorm, q/k/v, residual add) over the bottleneck positions, so every
+position can see the whole map; the output shape is unchanged. It has no positional encoding, so layout comes from the
+neighbouring conv features. Memory grows with the square of the number of bottleneck pixels: a 512 crop at
+`encoder_depth: 4` is a 32x32 map = 1024 tokens (fine), at `encoder_depth: 3` it is 64x64 = 4096 tokens (heavy).
+`attention_heads` must divide `min(base_channels * 2**encoder_depth, max_channels)`; otherwise training fails up front
+naming `custom_unet.attention_heads`.
+
+**ONNX.** FP32 export is verified for all of the above against onnxruntime, at a fixed crop and with dynamic H/W
+(legacy exporter, `dynamo=False`, opset 18, also through `export_onnx`). The attention layer uses
+`scaled_dot_product_attention`: `nn.MultiheadAttention` would pin the graph to the traced size.
 
 ### Loss phases
 

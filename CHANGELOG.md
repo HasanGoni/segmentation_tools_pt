@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-10-18
 
+Custom UNet config examples, skill and docs (#66, map #12).
+
+- `configs/train_multilabel_3head.yaml`: `model.source: smp` is now a real key, so the documented `model.source=custom_unet` override works (it failed with "Key 'source' is not in struct" because that config takes its model from a package). `train.yaml` already had it.
+- `nbs/09_model.ipynb`: a test composes every documented `custom_unet` command from both shipped configs and builds the model, so the docs cannot drift from the YAML.
+- `docs/TRAINING_CLI.md`: the Custom UNet section is one reference (options table, one command per option, depth/norm/ASPP/attention/ONNX notes, random-init caveat: DINOv3/SMP stays stronger for layout shift until a warm-start option exists). `docs/agents/repo-guide.md` and tutorial 08 point to it. Commented `custom_unet` blocks in both configs and the `choose-model-architecture` skill were completed in #62-#65.
+
 Custom UNet attention bottleneck (#65, map #12).
 
 - `nbs/09_model.ipynb`: `model.custom_unet.bottleneck` now accepts `attention` (Step 7). New `_AttentionBottleneck(channels, heads)`: flatten the map to `H*W` tokens, pre-LayerNorm, one q/k/v projection, `scaled_dot_product_attention`, output projection, residual add, fold back; keeps `(B, C, H, W)`. New `attention_heads` (default 4) must be a positive int that divides the bottleneck channels `min(base_channels * 2**encoder_depth, max_channels)`; a bad value raises `ValueError` naming `custom_unet.attention_heads` before any model is built (the `CustomUNet` constructor checks it too). `bottleneck` stays one value, so `aspp` and `attention` are exclusive; `aspp_rates` is ignored for attention and `attention_heads` for the others (unused knobs are not validated; `CustomUNet` now only checks `aspp_rates` when `bottleneck='aspp'`). The `NotImplementedError` branch and `_PLANNED_BOTTLENECKS` are gone; `_BOTTLENECK_BUILDERS` builders take `(channels, rates, heads, norm, num_groups)`.
