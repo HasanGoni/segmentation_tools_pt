@@ -15,7 +15,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from _bench_common import CLASSES, add_objects, ids_sha1, iou, new_tally, summarise
+from _bench_common import CLASSES, aggregate, ids_sha1, iou, patch_scores
 
 CHIP, LIFTED = 0, 1
 
@@ -31,7 +31,7 @@ def cmd_train(a):
     model = cls(num_channels=1)
     t = time.time()
     model.train(dataset_dir=str(coco), epochs=a.epochs, batch_size=a.batch_size, device='cuda',
-                num_workers=a.workers, output_dir=str(out / 'train'), lr=a.lr, early_stopping=False)
+                num_workers=a.workers, output_dir=str(out / 'train'), lr=a.lr, early_stopping=False, seed=a.seed)
     print('TRAIN_SECONDS', round(time.time() - t))
 
 
@@ -46,7 +46,7 @@ def cmd_eval(a):
     root = Path(a.cache) / 'val'
     stems = sorted(p.stem for p in (root / 'images').glob('*.png'))
     floor = min(a.thresholds)
-    acc = {t: dict(iou=[[], []], tally=[new_tally(), new_tally()], violation=[]) for t in a.thresholds}
+    acc = {t: dict(rows={}, violation=[]) for t in a.thresholds}
     kept = {}
     t0 = time.time()
     for n, s in enumerate(stems):
@@ -56,15 +56,14 @@ def cmd_eval(a):
         for t in a.thresholds:
             stack = detections_to_semantic(dets, shape=gt.shape[1:], class_ids=[0, 1], first_class_id=0, output='stack', threshold=t)
             pred = stack > 0
-            for k in range(len(CLASSES)):
-                acc[t]['iou'][k].append(iou(pred[k], gt[k]))
-                add_objects(acc[t]['tally'][k], pred[k], gt[k])
+            acc[t]['rows'][s] = patch_scores(pred, gt)
             acc[t]['violation'].append(subset_violation_rate(pred[LIFTED], pred[CHIP]))
             if t == a.primary:
                 kept[s] = (img, gt, pred)
         if n % 100 == 0:
             print(f'{n}/{len(stems)} patches, {time.time() - t0:.0f}s', flush=True)
-    rows = {str(t): {**summarise(r['iou'], r['tally']), 'violation': float(np.mean(r['violation']))} for t, r in acc.items()}
+    rows = {str(t): {**aggregate(r['rows'].values()), 'violation': float(np.mean(r['violation']))} for t, r in acc.items()}
+    (out / 'per_patch.json').write_text(json.dumps({str(t): r['rows'] for t, r in acc.items()}))
     res = {'checkpoint': str(ckpt), 'n_val': len(stems), 'val_ids_sha1': ids_sha1(stems), 'primary_threshold': a.primary, 'thresholds': rows}
     (out / 'eval.json').write_text(json.dumps(res, indent=1))
     print(json.dumps(res, indent=1))
@@ -92,6 +91,7 @@ def main(argv=None):
     t.add_argument('--batch-size', type=int, default=8)
     t.add_argument('--workers', type=int, default=4)
     t.add_argument('--lr', type=float, default=1e-4)
+    t.add_argument('--seed', type=int, default=None, help='RF-DETR training seed (default: unseeded, as in #102)')
     t.add_argument('--segmentation', default='auto', choices=['auto', 'polygon', 'rle'])
     e.add_argument('--ckpt', default=None, help='default: OUT/train/last_ema.pth (best_total can pick epoch 1)')
     e.add_argument('--thresholds', type=float, nargs='+', default=[0.3, 0.5, 0.7])

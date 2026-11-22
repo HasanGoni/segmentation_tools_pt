@@ -36,3 +36,12 @@ Otherwise **do not build B** (no clear gain, or a gain smaller than the noise). 
 ## Not in scope
 
 Polygon-vs-RLE loss on thin defects and the #101 carry-over checks (RF-DETR's RLE loader, 1-px features after resize, 16-bit input): only matter if the answer is Go.
+
+## Amendment 1 (after a smoke test on the existing arms, before the new runs finished)
+
+The smoke test (one RF-DETR run vs the two 6-epoch U-Nets; not the final comparison) showed the semantic arms selecting **0.9, the top of their grid**, in every direction, i.e. their false alarms were still falling when the grid ended. A grid that clips the baseline's optimum favours RF-DETR, so the semantic grid is extended to `0.05 0.1 0.2 0.3 0.5 0.7 0.9 0.95 0.99 0.995`. Nothing else in the rule changes. If any arm's selected threshold is still the last grid point in the final analysis, the result is reported as grid-limited and the grid is extended again before the rule is applied.
+
+## Amendment 2 (same smoke test, second look)
+
+With the Amendment 1 grid one 6-epoch seed still selected its last point (0.995). Per Amendment 1 the grid is extended again, to `0.05 0.1 0.2 0.3 0.5 0.7 0.9 0.95 0.99 0.995 0.999 0.9995 0.9999`, and **fixed from here on**: it is not extended again after the final runs are in. An arm whose selected threshold is the last point is then reported as grid-limited next to the verdict (sigmoid probabilities above 0.9999 are no longer distinguishable in float32 for most pixels, so a model that wants more is saturated, not under-tuned). Both amendments only help the semantic arms.
+
