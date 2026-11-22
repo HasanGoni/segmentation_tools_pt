@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/masks.html.md"""
 __all__ = ['binarize', 'fit_rotated_rects_mask', 'fit_rotated_rects_multiclass', 'one_hot', 'mask_to_coco_instances',
            'coco_instances_to_mask', 'write_coco_folder']
 
-# %% ../../nbs/02_masks.ipynb #77518e3a
+# %% ../../nbs/02_masks.ipynb #49c93ed5
 import json
 from pathlib import Path
 from typing import Optional, Sequence
@@ -21,7 +21,7 @@ import numpy as np
 # Use this constant everywhere we pass contour coordinate arrays to OpenCV.
 _CV_CONTOUR_DTYPE = np.int32
 
-# %% ../../nbs/02_masks.ipynb #08ff29bf
+# %% ../../nbs/02_masks.ipynb #809a0208
 def binarize(
     mask: np.ndarray,    # mask with any positive encoding (1 or 255)
     thresh: int = 127,   # threshold when values are 0/255; ignored for 0/1 masks
@@ -40,7 +40,7 @@ def binarize(
         return (mask > 0).astype(np.uint8)
     return (mask > thresh).astype(np.uint8)
 
-# %% ../../nbs/02_masks.ipynb #2c375c23
+# %% ../../nbs/02_masks.ipynb #671b8589
 def fit_rotated_rects_mask(
     mask: np.ndarray,    # binary {0,1} (or 0/255) mask, any shape
     min_pts: int = 5,    # contours with fewer points are kept as-is
@@ -82,7 +82,7 @@ def fit_rotated_rects_multiclass(
         out[cleaned > 0] = label
     return out
 
-# %% ../../nbs/02_masks.ipynb #d01fc2bd
+# %% ../../nbs/02_masks.ipynb #ee0596e2
 def one_hot(
     mask: np.ndarray,   # (H, W) integer labels: 0 = background, 1..K = classes
     num_classes: int,   # K, the number of foreground classes
@@ -238,16 +238,50 @@ def _to_uint8(img: np.ndarray) -> np.ndarray:
         return (img / 257).round().astype(np.uint8)
     return np.clip(img, 0, 255).astype(np.uint8)
 
+def _is_per_class(idir: Path, mdir: Path, names: Sequence[str], layout: str) -> bool:
+    "True when masks are one file per class; `layout='auto'` looks at the first image."
+    if layout not in ('auto', 'label_map', 'per_class'):
+        raise ValueError(f"layout must be 'auto', 'label_map' or 'per_class', got {layout!r}")
+    if layout != 'auto':
+        return layout == 'per_class'
+    first = next(iter(sorted(idir.glob('*.png'))), None)
+    return first is not None and not (mdir / first.name).exists() and (mdir / f'{first.stem}_{names[0]}.png').exists()
+
+def _read_label_map(mpath: Path, names: Sequence[str]) -> np.ndarray:
+    "One `{id}.png` label map: binarized for one class name, else values must lie in 0..K."
+    mask = cv2.imread(str(mpath), cv2.IMREAD_UNCHANGED)
+    if mask.ndim == 3:
+        raise ValueError(f'{mpath} has {mask.shape[2]} channels; stacked masks are not supported')
+    if len(names) == 1:
+        return binarize(mask)
+    if int(mask.max()) > len(names):
+        raise ValueError(f'{mpath} has mask value {int(mask.max())} but only {len(names)} class_names '
+                         f'{names}; category ids would have no entry in `categories`')
+    return mask
+
+def _read_class_stack(mdir: Path, fname: str, names: Sequence[str]) -> np.ndarray:
+    "`(K, H, W)` binary stack from `{id}_{name}.png`, one file per class."
+    layers = []
+    for n in names:
+        path = mdir / f'{Path(fname).stem}_{n}.png'
+        if not path.exists():
+            raise FileNotFoundError(f'{path} missing: per-class layout needs one mask file per class name {list(names)}')
+        layers.append(binarize(cv2.imread(str(path), cv2.IMREAD_UNCHANGED)))
+    return np.stack(layers)
+
 def write_coco_folder(
     patch_dir: str,                 # patch cache from `build_patch_dataset`: `{split}/images/{id}.png`, `{split}/masks/{id}.png`
     out_dir: str,                   # where to write `train/`, `valid/` with `_annotations.coco.json`
     class_names: Sequence[str],     # foreground names; category ids are 1..K (one name = binary mask)
     splits: Optional[dict] = None,  # {cache split: output folder}, default `{'train': 'train', 'val': 'valid'}`
+    layout: str = 'auto',           # 'label_map' = `masks/{id}.png` (values 0..K) | 'per_class' = `masks/{id}_{name}.png` | 'auto'
     **kw,                           # forwarded to `mask_to_coco_instances` (segmentation, epsilon, min_area, ...)
 ) -> dict:
     """Write the patch cache as a COCO instance dataset (8-bit PNGs + `_annotations.coco.json`) and return `{folder: (n_images, n_annotations)}`.
 
     Empty patches are kept (with no annotations). Single-channel caches only: a `_ch0`-style multi-channel cache raises.
+    `layout='per_class'` reads one binary mask per class (`masks/{id}_{name}.png`, the multilabel patch cache) so classes
+    may overlap; a missing class file raises. `'auto'` chooses it when `masks/{id}.png` is absent but `{id}_{first name}.png` exists.
     With K `class_names`, mask values must lie in 0..K (a larger value raises `ValueError`); one name binarizes the mask.
     16-bit images are divided by 257: this is **lossy** (65536 grey levels become 256), so contrast that lives in the low
     bits is gone from the COCO copy. `segmentation='auto'` writes RLE only for components with holes; RF-DETR's loader
@@ -265,21 +299,16 @@ def write_coco_folder(
         out = Path(out_dir) / dst
         out.mkdir(parents=True, exist_ok=True)
         images, annotations, ann_id = [], [], 1
-        for image_id, mpath in enumerate(sorted(mdir.glob('*.png')), start=1):
-            ipath = idir / mpath.name
+        per_class = _is_per_class(idir, mdir, names, layout)
+        stems = sorted(p.name for p in (idir if per_class else mdir).glob('*.png'))
+        for image_id, fname in enumerate(stems, start=1):
+            ipath = idir / fname
             if not ipath.exists():
                 raise FileNotFoundError(f'{ipath} missing: multi-channel caches (`_ch0` images) are not supported')
             img = cv2.imread(str(ipath), cv2.IMREAD_UNCHANGED)
-            mask = cv2.imread(str(mpath), cv2.IMREAD_UNCHANGED)
-            if mask.ndim == 3:
-                raise ValueError(f'{mpath} has {mask.shape[2]} channels; stacked masks are not supported')
-            if len(names) == 1:
-                mask = binarize(mask)
-            elif int(mask.max()) > len(names):
-                raise ValueError(f'{mpath} has mask value {int(mask.max())} but only {len(names)} class_names '
-                                 f'{names}; category ids would have no entry in `categories`')
-            cv2.imwrite(str(out / mpath.name), _to_uint8(img))
-            images.append({'id': image_id, 'file_name': mpath.name, 'width': int(img.shape[1]), 'height': int(img.shape[0])})
+            mask = _read_class_stack(mdir, fname, names) if per_class else _read_label_map(mdir / fname, names)
+            cv2.imwrite(str(out / fname), _to_uint8(img))
+            images.append({'id': image_id, 'file_name': fname, 'width': int(img.shape[1]), 'height': int(img.shape[0])})
             anns = mask_to_coco_instances(mask, image_id=image_id, first_ann_id=ann_id, **kw)
             ann_id += len(anns)
             annotations.extend(anns)

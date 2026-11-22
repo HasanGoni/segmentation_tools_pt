@@ -78,7 +78,7 @@ Images smaller than one tile are zero-padded up; clamped tile starts cover every
 
 ## Instance-model output (RF-DETR) as a semantic map
 
-`detections_to_semantic(dets, class_ids=[1])` paints `.mask (N,H,W)`, `.class_id`, `.confidence`
+`detections_to_semantic(dets, class_ids=[0, 1], first_class_id=0)` (RF-DETR's 2-class model returned 0-based ids; check `set(dets.class_id)` and pass `first_class_id` to match) paints `.mask (N,H,W)`, `.class_id`, `.confidence`
 (plain arrays or a `supervision.Detections`) into an `(H, W)` long map; `output='stack'` gives
 `(K, H, W)` best scores per class; `threshold=` drops weak detections; the higher score wins overlaps.
 RF-DETR itself runs outside the library (reload with `RFDETR.from_checkpoint`, prefer `last_ema.pth`);

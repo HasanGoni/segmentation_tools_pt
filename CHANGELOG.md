@@ -23,7 +23,7 @@ RF-DETR bridge: instance-model data and output converters (#101, map #100, resea
 
   `epsilon=0.5` on a radius-20 disc: 552 -> 104 numbers at IoU 0.975. Not verified: RF-DETR's own loader on the uncompressed RLE that `auto` writes for components with holes, and its resize to training resolution.
 - `write_coco_folder` raises `ValueError` when a mask value exceeds the number of `class_names` (it used to write a `category_id` with no entry in `categories`). 16-bit images divided by 257 are lossy.
-- `inference.detections_to_semantic(dets, shape, class_ids, rule='score', output='labels'|'stack', threshold)`: `(H, W)` long labels or `(K, H, W)` float best scores; higher score wins overlaps; equal scores: the later detection wins; class id 0 or below raises (ids start at 1); works with `supervision.Detections`-like objects or a plain tuple; consumed by `ObjectMetrics`, `SegMetrics`, `review_report.Sample`.
+- `inference.detections_to_semantic(dets, shape, class_ids, rule='score', output='labels'|'stack', threshold)`: `(H, W)` long labels or `(K, H, W)` float best scores; higher score wins overlaps; equal scores: the later detection wins; class ids below `first_class_id` raise (default 1; RF-DETR's 2-class model returned 0-based ids, so pass `first_class_id=0`, see #102); works with `supervision.Detections`-like objects or a plain tuple; consumed by `ObjectMetrics`, `SegMetrics`, `review_report.Sample`.
 - `tutorials/09_rfdetr_bridge.ipynb` (rfdetr cells optional, guarded by `RUN_RFDETR`), `docs/TRAINING_CLI.md` section, `choose-model-architecture` and `run-inference` skills. Recipe gotchas recorded: reload with `RFDETR.from_checkpoint` before `predict`; prefer `last_ema.pth` over `checkpoint_best_total.pth` on small data; ONNX is fixed batch 1.
 
 ---
