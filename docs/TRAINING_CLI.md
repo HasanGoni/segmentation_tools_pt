@@ -470,10 +470,11 @@ from segmentation_tools_pt.masks import write_coco_folder
 from segmentation_tools_pt.inference import detections_to_semantic
 
 write_coco_folder('patches', 'coco', class_names=['defect'])    # patch cache -> coco/{train,valid}/_annotations.coco.json
-sem = detections_to_semantic(dets, class_ids=[1])               # RF-DETR detections -> (H, W) long; higher score wins overlaps
+sem = detections_to_semantic(dets, class_ids=[0, 1], first_class_id=0)   # RF-DETR detections -> (H, W) long; higher score wins overlaps
 ```
 
-Holes are written as RLE, everything else as lossless polygons (`segmentation='auto'`);
+RF-DETR's class ids depend on the model: a 2-class model returned 0-based ids (an index into `model.class_names`), so check
+`set(dets.class_id)` and pass `first_class_id=0` or `1`. Holes are written as RLE, everything else as lossless polygons (`segmentation='auto'`);
 `segmentation='polygon'` fills holes. Gotchas: reload with `RFDETR.from_checkpoint(...)` before
 `predict` (a just-trained 1-channel model fails); prefer `last_ema.pth` over
 `checkpoint_best_total.pth` on small data; ONNX export is fixed batch 1 and fixed size, and its

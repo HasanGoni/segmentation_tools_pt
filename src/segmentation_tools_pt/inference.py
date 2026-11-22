@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/inference.html.md"""
 __all__ = ['predict', 'decode', 'apply_hierarchy', 'apply_class_morph', 'find_operating_threshold', 'tile_starts',
            'predict_tiled', 'detections_to_semantic']
 
-# %% ../../nbs/11_inference.ipynb #852bc6a2
+# %% ../../nbs/11_inference.ipynb #bdffedd7
 import cv2
 
 from typing import Dict, List, Optional, Sequence
@@ -16,10 +16,10 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import torch
 
-# %% ../../nbs/11_inference.ipynb #6b9f8214
+# %% ../../nbs/11_inference.ipynb #07061867
 from segmentation_tools_pt.metrics import ObjectMetrics
 
-# %% ../../nbs/11_inference.ipynb #9e5b9f40
+# %% ../../nbs/11_inference.ipynb #0bbcfa7b
 def _activate(
     logits: torch.Tensor,  # (B, C, H, W) raw model output
     task: str,             # 'binary' | 'multiclass' | 'multilabel'; None infers binary (C==1) or multiclass (C>1)
@@ -37,7 +37,7 @@ def _activate(
     if not activate: return logits
     return torch.sigmoid(logits) if (logits.shape[1] == 1 or task == 'multilabel') else torch.softmax(logits, dim=1)
 
-# %% ../../nbs/11_inference.ipynb #84229cea
+# %% ../../nbs/11_inference.ipynb #90d07ab5
 @torch.no_grad()
 def predict(
     model,                 # trained model returning (B, C, H, W) logits
@@ -63,7 +63,7 @@ def predict(
         preds.append(torch.rot90(pr, -k, dims=[2, 3]))
     return torch.stack(preds).mean(0).squeeze(0)
 
-# %% ../../nbs/11_inference.ipynb #fb12829d
+# %% ../../nbs/11_inference.ipynb #dad47159
 def decode(
     probs: torch.Tensor,     # (C, H, W) probabilities
     threshold=0.5,            # decision threshold: float (binary/multilabel-shared), or per-channel Sequence[float] for multilabel
@@ -92,7 +92,7 @@ def decode(
         return (probs[0] >= threshold).long()
     return probs.argmax(0)
 
-# %% ../../nbs/11_inference.ipynb #12c6cd7f
+# %% ../../nbs/11_inference.ipynb #842db445
 def apply_hierarchy(
     masks: torch.Tensor,  # (C, H, W) or (B, C, H, W) decoded/binary multilabel masks
     pairs,                  # [(sub_idx, super_idx), ...], e.g. [(1, 0), (2, 0)] for (void,chip),(lifted,chip)
@@ -158,7 +158,7 @@ def apply_class_morph(
         items[i] = torch.from_numpy(m.astype(bool)).to(masks.dtype)
     return masks
 
-# %% ../../nbs/11_inference.ipynb #8ace4672
+# %% ../../nbs/11_inference.ipynb #6582b9cb
 @torch.no_grad()
 def find_operating_threshold(
     model,                          # trained binary model
@@ -199,7 +199,7 @@ def find_operating_threshold(
     return {'recommended_threshold': best['threshold'], 'achieved_recall': best['recall'],
             'achieved_precision': best['precision'], 'sweep': sweep}
 
-# %% ../../nbs/11_inference.ipynb #c3a3d0f3
+# %% ../../nbs/11_inference.ipynb #b6604a56
 def _reflect_idx(
     n: int,   # size of the original axis
     pad: int, # how much to extend the axis
@@ -319,11 +319,17 @@ def predict_tiled(
     return (acc / wsum)[:, :H, :W]  # (C_out, H, W)
 
 # %% ../../nbs/11_inference.ipynb #b37c9f85
+def _class_id_hint(what: str, bad, first_class_id: int) -> str:
+    "Error text for a class id below `first_class_id`, with the fix for models whose ids start at 0."
+    hint = ' A model with 0-based class ids (RF-DETR) needs first_class_id=0.' if first_class_id == 1 and 0 in bad else ''
+    return f'class ids start at {first_class_id}; got {what} {bad}.{hint}'
+
 def _unpack_dets(
     dets,                    # `.mask/.class_id/.confidence` object or `(mask, class_id, confidence)` tuple
     shape: Optional[tuple],  # (H, W) or None
+    first_class_id: int = 1, # smallest valid class id
 ) -> tuple:
-    "Read, coerce and validate detections: `(N, H, W)` bool, `(N,)` int64, `(N,)` float32. Class ids must be >= 1."
+    "Read, coerce and validate detections: `(N, H, W)` bool, `(N,)` int64, `(N,)` float32. Class ids must be >= `first_class_id`."
     if isinstance(dets, (tuple, list)):
         mask, cid, conf = dets
     else:
@@ -337,8 +343,8 @@ def _unpack_dets(
         raise ValueError(f'mask (N,H,W), class_id (N,), confidence (N,) must agree; got {mask.shape}, {cid.shape}, {conf.shape}')
     if shape is not None and tuple(mask.shape[1:]) != tuple(shape):
         raise ValueError(f'mask shape {mask.shape[1:]} != requested shape {tuple(shape)}')
-    if (cid < 1).any():
-        raise ValueError(f'class ids start at 1 (0 is background); got class_id {sorted(set(cid[cid < 1].tolist()))}')
+    if (cid < first_class_id).any():
+        raise ValueError(_class_id_hint('class_id', sorted(set(cid[cid < first_class_id].tolist())), first_class_id))
     return mask, cid, conf
 
 def detections_to_semantic(
@@ -348,13 +354,15 @@ def detections_to_semantic(
     rule: str = 'score',                 # overlap rule: 'score' = the higher confidence wins
     output: str = 'labels',              # 'labels' -> (H, W) long | 'stack' -> (K, H, W) float32 best score per class
     threshold: float = 0.0,              # drop detections with confidence below this
+    first_class_id: int = 1,             # the model's smallest class id: 1 (default) or 0 for 0-based ids such as RF-DETR's
 ):
     """Paint instance detections onto a semantic map so `SegMetrics`, `ObjectMetrics` and `review_report.Sample` can consume them.
 
-    Pure numpy in and out; no `rfdetr` / `supervision` import. Labels hold the detection's `class_id`; 0 is background.
+    Pure numpy in and out; no `rfdetr` / `supervision` import. Labels hold `class_id - first_class_id + 1`, so 0 stays background.
 
-    Class ids must be >= 1 (RF-DETR ids start at 1): a detection or an entry of `class_ids` with id 0 or below raises
-    `ValueError` instead of silently painting background. Where two detections overlap the higher score wins; with
+    Class ids must be >= `first_class_id`: a detection or an entry of `class_ids` below it raises `ValueError` instead
+    of silently painting background. RF-DETR returns **0-based** ids (indices into `model.class_names`, checked on a
+    2-class model), so pass `first_class_id=0` for it and `class_ids=[0, 1, ...]` in the model's own numbering. Where two detections overlap the higher score wins; with
     **equal scores the later detection (higher index) wins**, so the result is deterministic. `output='stack'` keeps
     the best score per class and pixel, so ties do not matter there.
 
@@ -367,18 +375,18 @@ def detections_to_semantic(
         raise ValueError(f"rule must be 'score', got {rule!r}")
     if output not in ('labels', 'stack'):
         raise ValueError(f"output must be 'labels' or 'stack', got {output!r}")
-    mask, cid, conf = _unpack_dets(dets, shape)
+    mask, cid, conf = _unpack_dets(dets, shape, first_class_id)
     h, w = mask.shape[1:]
     keep_cls = np.unique(cid) if class_ids is None else np.asarray(list(class_ids), np.int64)
-    if (keep_cls < 1).any():
-        raise ValueError(f'class ids start at 1 (0 is background); got class_ids {keep_cls.tolist()}')
+    if (keep_cls < first_class_id).any():
+        raise ValueError(_class_id_hint('class_ids', keep_cls.tolist(), first_class_id))
     keep = (conf >= threshold) & np.isin(cid, keep_cls)
     # stable sort keeps detection order among equal scores, so the later one paints last and wins
     order = [k for k in np.argsort(conf, kind='stable') if keep[k]]
     if output == 'labels':
         out = np.zeros((h, w), np.int64)
         for k in order:
-            out[mask[k]] = cid[k]
+            out[mask[k]] = cid[k] - first_class_id + 1
         return out
     out = np.zeros((len(keep_cls), h, w), np.float32)
     channel_of = {int(c): i for i, c in enumerate(keep_cls)}

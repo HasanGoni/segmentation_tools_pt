@@ -96,7 +96,7 @@ for it: train it in a separate virtualenv and use the bridge. Do not add `rfdetr
 
 - Data: `masks.write_coco_folder(patch_dir, out_dir, class_names)` writes `train/` + `valid/` COCO
   folders (holes become RLE; `segmentation='polygon'` fills them; keep `epsilon=0` for 1-3 px defects).
-- Back to our metrics: `inference.detections_to_semantic(dets, class_ids=[1])` -> `(H, W)` long
+- Back to our metrics: `inference.detections_to_semantic(dets, class_ids=[0, 1], first_class_id=0)` -> `(H, W)` long (RF-DETR ids are model-dependent: check `model.class_names` and `set(dets.class_id)`, #102)
   (or `output='stack'` for `(K, H, W)` scores); overlap: higher score wins. Feed `ObjectMetrics`,
   `SegMetrics`, `review_report.Sample`.
 - Gotchas: reload with `RFDETR.from_checkpoint(...)` before `predict` (a just-trained 1-channel model
