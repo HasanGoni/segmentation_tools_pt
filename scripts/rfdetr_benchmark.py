@@ -7,7 +7,7 @@ Run it in a SEPARATE environment that has `rfdetr[train]` (the library does not 
 
 `train` converts the cache with `write_coco_folder` (per-class layout) and calls `RFDETRSeg*.train`.
 `eval` predicts every val patch, rasterises with `detections_to_semantic`, and scores the result with the same
-`object_metrics` / IoU code the semantic A/B notebook (`tutorials/07_hierarchy_ab_real_data.ipynb`) uses.
+`object_metrics` / IoU code (`scripts/_bench_common.py`) as `scripts/semantic_threshold_sweep.py`, which scores the semantic baseline.
 """
 import argparse, json, sys, time
 from pathlib import Path
@@ -15,13 +15,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CLASSES = ['chip', 'lifted']
+from _bench_common import CLASSES, add_objects, ids_sha1, iou, new_tally, summarise
+
 CHIP, LIFTED = 0, 1
-
-
-def _iou(p, g):
-    u = (p | g).sum()
-    return float((p & g).sum() / u) if u else 1.0
 
 
 def cmd_train(a):
@@ -30,7 +26,7 @@ def cmd_train(a):
     out = Path(a.out)
     coco = out / 'coco'
     if not (coco / 'valid' / '_annotations.coco.json').exists():
-        print('coco folder:', write_coco_folder(a.cache, str(coco), CLASSES, segmentation=a.segmentation))
+        print('coco folder:', write_coco_folder(a.cache, str(coco), list(CLASSES), segmentation=a.segmentation))
     cls = {'nano': RFDETRSegNano, 'small': RFDETRSegSmall, 'medium': RFDETRSegMedium}[a.model]
     model = cls(num_channels=1)
     t = time.time()
@@ -42,7 +38,7 @@ def cmd_train(a):
 def cmd_eval(a):
     from rfdetr import RFDETR
     from segmentation_tools_pt.inference import detections_to_semantic
-    from segmentation_tools_pt.metrics import object_metrics, subset_violation_rate
+    from segmentation_tools_pt.metrics import subset_violation_rate
     from PIL import Image
     out = Path(a.out)
     ckpt = Path(a.ckpt) if a.ckpt else out / 'train' / 'last_ema.pth'
@@ -50,9 +46,8 @@ def cmd_eval(a):
     root = Path(a.cache) / 'val'
     stems = sorted(p.stem for p in (root / 'images').glob('*.png'))
     floor = min(a.thresholds)
-    acc = {t: dict(iou=[[], []], viol=[], obj=[dict(total=0, detected=0, fa=0) for _ in CLASSES],
-                   n_inst=[0, 0]) for t in a.thresholds}
-    keep = {}
+    acc = {t: dict(iou=[[], []], tally=[new_tally(), new_tally()], violation=[]) for t in a.thresholds}
+    kept = {}
     t0 = time.time()
     for n, s in enumerate(stems):
         img = np.array(Image.open(root / 'images' / f'{s}.png'))
@@ -61,39 +56,27 @@ def cmd_eval(a):
         for t in a.thresholds:
             stack = detections_to_semantic(dets, shape=gt.shape[1:], class_ids=[0, 1], first_class_id=0, output='stack', threshold=t)
             pred = stack > 0
-            r = acc[t]
             for k in range(len(CLASSES)):
-                r['iou'][k].append(_iou(pred[k], gt[k]))
-                o = object_metrics(pred[k].astype(np.uint8), gt[k].astype(np.uint8))
-                r['obj'][k]['total'] += o['total_gt']; r['obj'][k]['detected'] += o['detected']; r['obj'][k]['fa'] += o['false_alarms']
-            r['viol'].append(subset_violation_rate(pred[LIFTED], pred[CHIP]))
+                acc[t]['iou'][k].append(iou(pred[k], gt[k]))
+                add_objects(acc[t]['tally'][k], pred[k], gt[k])
+            acc[t]['violation'].append(subset_violation_rate(pred[LIFTED], pred[CHIP]))
             if t == a.primary:
-                keep[s] = (img, gt, pred)
+                kept[s] = (img, gt, pred)
         if n % 100 == 0:
             print(f'{n}/{len(stems)} patches, {time.time() - t0:.0f}s', flush=True)
-    rows = {}
-    for t, r in acc.items():
-        rows[str(t)] = {
-            'iou_chip': float(np.mean(r['iou'][CHIP])), 'iou_lifted': float(np.mean(r['iou'][LIFTED])),
-            'lifted_total': r['obj'][LIFTED]['total'], 'lifted_detected': r['obj'][LIFTED]['detected'],
-            'lifted_recall': r['obj'][LIFTED]['detected'] / max(r['obj'][LIFTED]['total'], 1),
-            'lifted_false_alarms': r['obj'][LIFTED]['fa'],
-            'chip_recall': r['obj'][CHIP]['detected'] / max(r['obj'][CHIP]['total'], 1),
-            'chip_false_alarms': r['obj'][CHIP]['fa'],
-            'violation': float(np.mean(r['viol'])),
-        }
-    res = {'checkpoint': str(ckpt), 'n_val': len(stems), 'primary_threshold': a.primary, 'thresholds': rows}
+    rows = {str(t): {**summarise(r['iou'], r['tally']), 'violation': float(np.mean(r['violation']))} for t, r in acc.items()}
+    res = {'checkpoint': str(ckpt), 'n_val': len(stems), 'val_ids_sha1': ids_sha1(stems), 'primary_threshold': a.primary, 'thresholds': rows}
     (out / 'eval.json').write_text(json.dumps(res, indent=1))
     print(json.dumps(res, indent=1))
     if a.report:
         from segmentation_tools_pt.review_report import Sample, build_report
-        lifted_iou = {s: _iou(p[LIFTED], g[LIFTED]) for s, (_, g, p) in keep.items()}
-        worst = sorted(keep, key=lambda s: lifted_iou[s])[:40]
+        lifted_iou = {s: iou(p[LIFTED], g[LIFTED]) for s, (_, g, p) in kept.items()}
+        worst = sorted(kept, key=lambda s: lifted_iou[s])[:40]
         rest = [s for s in stems if s not in set(worst)]
         pick = worst + list(np.random.default_rng(0).choice(rest, 40, replace=False))
         (out / 'sample_ids.json').write_text(json.dumps([str(x) for x in pick]))   # the baseline report reuses these
-        samples = [Sample(s, keep[s][0], keep[s][1].astype(np.uint8), keep[s][2].astype(np.uint8),
-                          class_names=CLASSES, score=lifted_iou[s]) for s in pick]
+        samples = [Sample(s, kept[s][0], kept[s][1].astype(np.uint8), kept[s][2].astype(np.uint8),
+                          class_names=list(CLASSES), score=lifted_iou[s]) for s in pick]
         print('report:', build_report(f'rfdetr-{a.model_tag}', out / 'report', samples))
 
 
