@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/masks.html.md"""
 __all__ = ['binarize', 'fit_rotated_rects_mask', 'fit_rotated_rects_multiclass', 'one_hot', 'mask_to_coco_instances',
            'coco_instances_to_mask', 'write_coco_folder']
 
-# %% ../../nbs/02_masks.ipynb #bea7b23c
+# %% ../../nbs/02_masks.ipynb #77518e3a
 import json
 from pathlib import Path
 from typing import Optional, Sequence
@@ -21,7 +21,7 @@ import numpy as np
 # Use this constant everywhere we pass contour coordinate arrays to OpenCV.
 _CV_CONTOUR_DTYPE = np.int32
 
-# %% ../../nbs/02_masks.ipynb #bbd81d5c
+# %% ../../nbs/02_masks.ipynb #08ff29bf
 def binarize(
     mask: np.ndarray,    # mask with any positive encoding (1 or 255)
     thresh: int = 127,   # threshold when values are 0/255; ignored for 0/1 masks
@@ -40,7 +40,7 @@ def binarize(
         return (mask > 0).astype(np.uint8)
     return (mask > thresh).astype(np.uint8)
 
-# %% ../../nbs/02_masks.ipynb #95888f20
+# %% ../../nbs/02_masks.ipynb #2c375c23
 def fit_rotated_rects_mask(
     mask: np.ndarray,    # binary {0,1} (or 0/255) mask, any shape
     min_pts: int = 5,    # contours with fewer points are kept as-is
@@ -82,7 +82,7 @@ def fit_rotated_rects_multiclass(
         out[cleaned > 0] = label
     return out
 
-# %% ../../nbs/02_masks.ipynb #3ab9765c
+# %% ../../nbs/02_masks.ipynb #d01fc2bd
 def one_hot(
     mask: np.ndarray,   # (H, W) integer labels: 0 = background, 1..K = classes
     num_classes: int,   # K, the number of foreground classes
@@ -102,12 +102,14 @@ def one_hot(
 
 # %% ../../nbs/02_masks.ipynb #55d4f2e6
 def _rle_encode(
-    m: np.ndarray,   # (H, W) {0,1}
+    binary_mask: np.ndarray,   # (H, W) {0,1}
 ) -> dict:
     "Uncompressed COCO RLE: column-major run lengths, first run counts zeros."
-    flat = (m > 0).astype(np.uint8).T.reshape(-1)
-    runs = np.diff(np.concatenate([[0], np.flatnonzero(np.diff(flat)) + 1, [flat.size]])).tolist()
-    return {'counts': ([0] if flat[0] == 1 else []) + runs, 'size': [int(m.shape[0]), int(m.shape[1])]}
+    column_major = (binary_mask > 0).astype(np.uint8).T.reshape(-1)
+    run_starts = np.flatnonzero(np.diff(column_major)) + 1
+    runs = np.diff(np.concatenate([[0], run_starts, [column_major.size]])).tolist()
+    return {'counts': ([0] if column_major[0] == 1 else []) + runs,
+            'size': [int(binary_mask.shape[0]), int(binary_mask.shape[1])]}
 
 def _rle_decode(
     rle: dict,   # {'counts': list[int], 'size': [H, W]}
@@ -116,28 +118,33 @@ def _rle_decode(
     counts = rle['counts']
     if isinstance(counts, (str, bytes)):
         raise ValueError('compressed RLE strings are not supported; use the uncompressed counts list')
-    h, w = rle['size']
-    flat = np.zeros(h * w, np.uint8); pos = 0; val = 0
-    for k in counts:
-        if val: flat[pos:pos + k] = 1
-        pos += k; val ^= 1
-    return flat.reshape(w, h).T
+    height, width = rle['size']
+    column_major = np.zeros(height * width, np.uint8)
+    cursor = 0
+    run_is_foreground = False
+    for run in counts:
+        if run_is_foreground:
+            column_major[cursor:cursor + run] = 1
+        cursor += run
+        run_is_foreground = not run_is_foreground
+    return column_major.reshape(width, height).T
 
 def _component_polygons(
     comp: np.ndarray,    # (H, W) uint8 {0,1}, one connected component
     epsilon: float = 0,  # Douglas-Peucker tolerance in original pixels; 0 = lossless
 ) -> tuple:
     "Outer polygons (flat `[x1, y1, ...]` lists, original-pixel coords) and whether the component has holes."
-    up = cv2.resize(comp, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
-    cs, hier = cv2.findContours(up, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
-    has_holes = hier is not None and bool((hier[0][:, 3] >= 0).any())
+    upscaled = cv2.resize(comp, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+    contours, hierarchy = cv2.findContours(upscaled, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+    has_holes = hierarchy is not None and bool((hierarchy[0][:, 3] >= 0).any())
     polys = []
-    for c, h in zip(cs, hier[0]):
-        if h[3] >= 0:
+    for contour, node in zip(contours, hierarchy[0]):
+        parent = node[3]
+        if parent >= 0:
             continue
         if epsilon > 0:
-            c = cv2.approxPolyDP(c, epsilon * 2, True)
-        polys.append(((c.reshape(-1, 2).astype(np.float64) + 0.5) / 2).reshape(-1).tolist())
+            contour = cv2.approxPolyDP(contour, epsilon * 2, True)
+        polys.append(((contour.reshape(-1, 2).astype(np.float64) + 0.5) / 2).reshape(-1).tolist())
     return polys, has_holes
 
 def mask_to_coco_instances(
@@ -153,6 +160,10 @@ def mask_to_coco_instances(
 
     `category_id` is the label value (or channel index + 1 for a `(K, H, W)` stack).
     `area` is the pixel count and `bbox` is `[x, y, w, h]`. Use `binarize` first for 0/255 masks.
+
+    `segmentation='auto'` writes polygons, and an uncompressed-RLE dict only for components that have a hole
+    (polygons cannot hold one). pycocotools reads that RLE (checked in the notebook); whether RF-DETR's own
+    loader accepts it is unverified, so pass `segmentation='polygon'` (holes get filled) if it does not.
 
     Example:
         >>> m = np.zeros((8, 8), np.uint8); m[1:3, 1:3] = 1
@@ -237,7 +248,10 @@ def write_coco_folder(
     """Write the patch cache as a COCO instance dataset (8-bit PNGs + `_annotations.coco.json`) and return `{folder: (n_images, n_annotations)}`.
 
     Empty patches are kept (with no annotations). Single-channel caches only: a `_ch0`-style multi-channel cache raises.
-    16-bit images are divided by 257 (documented loss of range).
+    With K `class_names`, mask values must lie in 0..K (a larger value raises `ValueError`); one name binarizes the mask.
+    16-bit images are divided by 257: this is **lossy** (65536 grey levels become 256), so contrast that lives in the low
+    bits is gone from the COCO copy. `segmentation='auto'` writes RLE only for components with holes; RF-DETR's loader
+    on that RLE is unverified (see `mask_to_coco_instances`).
 
     Example:
         >>> write_coco_folder('patches', 'coco', ['defect'])  # doctest: +SKIP
@@ -261,6 +275,9 @@ def write_coco_folder(
                 raise ValueError(f'{mpath} has {mask.shape[2]} channels; stacked masks are not supported')
             if len(names) == 1:
                 mask = binarize(mask)
+            elif int(mask.max()) > len(names):
+                raise ValueError(f'{mpath} has mask value {int(mask.max())} but only {len(names)} class_names '
+                                 f'{names}; category ids would have no entry in `categories`')
             cv2.imwrite(str(out / mpath.name), _to_uint8(img))
             images.append({'id': image_id, 'file_name': mpath.name, 'width': int(img.shape[1]), 'height': int(img.shape[0])})
             anns = mask_to_coco_instances(mask, image_id=image_id, first_ann_id=ann_id, **kw)
