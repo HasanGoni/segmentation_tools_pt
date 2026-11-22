@@ -76,6 +76,14 @@ Knobs live in the `inference:` config block (`tile_size`, `overlap`,
 tiled-inference consumers — `predict_tiled` batches tiles in-process and ignores it.
 Images smaller than one tile are zero-padded up; clamped tile starts cover every pixel.
 
+## Instance-model output (RF-DETR) as a semantic map
+
+`detections_to_semantic(dets, class_ids=[1])` paints `.mask (N,H,W)`, `.class_id`, `.confidence`
+(plain arrays or a `supervision.Detections`) into an `(H, W)` long map; `output='stack'` gives
+`(K, H, W)` best scores per class; `threshold=` drops weak detections; the higher score wins overlaps.
+RF-DETR itself runs outside the library (reload with `RFDETR.from_checkpoint`, prefer `last_ema.pth`);
+see `choose-model-architecture` and `tutorials/09_rfdetr_bridge.ipynb`.
+
 ## Library anchors
 
 - `src/segmentation_tools_pt/inference.py` — `predict` (sliding-window + blending),

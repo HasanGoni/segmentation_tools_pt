@@ -88,6 +88,23 @@ Unknown **non-`tu-*`** names hard-error.
 - For Chip/Void/Lifted recipes: default package `dinov3_vit_small`; throughput alt `convnext_tiny`;
   shut-off `mobilenet_v2`.
 
+## Instance models (RF-DETR segmentation): outside the library
+
+Not a `model.source`. RF-DETR returns objects (box, class, score, mask), not a per-pixel map, and
+trains in its own Lightning loop, so it never goes through `get_model()` / `train()`. If a user asks
+for it: train it in a separate virtualenv and use the bridge. Do not add `rfdetr` to `pyproject.toml`.
+
+- Data: `masks.write_coco_folder(patch_dir, out_dir, class_names)` writes `train/` + `valid/` COCO
+  folders (holes become RLE; `segmentation='polygon'` fills them; keep `epsilon=0` for 1-3 px defects).
+- Back to our metrics: `inference.detections_to_semantic(dets, class_ids=[1])` -> `(H, W)` long
+  (or `output='stack'` for `(K, H, W)` scores); overlap: higher score wins. Feed `ObjectMetrics`,
+  `SegMetrics`, `review_report.Sample`.
+- Gotchas: reload with `RFDETR.from_checkpoint(...)` before `predict` (a just-trained 1-channel model
+  fails); prefer `last_ema.pth` over `checkpoint_best_total.pth` on small data; ONNX is fixed batch 1
+  and fixed size (own `dets/labels/masks` outputs, not our `export_onnx` format).
+- Decision rule and research: `docs/superpowers/specs/2026-11-22-rfdetr-seg-integration-research.md`;
+  walkthrough `tutorials/09_rfdetr_bridge.ipynb`.
+
 ## Library anchors
 
 - `src/segmentation_tools_pt/model.py` — `get_model_from_cfg`, `CustomUNet`, `get_model`, `resolve_encoder_name`, `list_smp_architectures`,
@@ -95,3 +112,4 @@ Unknown **non-`tu-*`** names hard-error.
 - `src/segmentation_tools_pt/hydra_pipeline.py` — `resolve_train_schedule` (returns `TrainSchedule`; neutralises freeze/LR for `custom_unet`).
 - Hydra packages: `configs/model/{mobilenet_v2,dinov3_vit_small,convnext_tiny,efficientnetv2_s}.yaml`.
 - Source notebook: `nbs/09_model.ipynb`; tutorial: `tutorials/08_custom_unet.ipynb`.
+- RF-DETR bridge: `masks.write_coco_folder`, `masks.mask_to_coco_instances`, `inference.detections_to_semantic` (`nbs/02_masks.ipynb`, `nbs/11_inference.ipynb`).

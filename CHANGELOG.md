@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-11-22
+
+RF-DETR bridge: instance-model data and output converters (#101, map #100, research #99). Nothing imports `rfdetr`; the functions take plain arrays and `pyproject.toml` is unchanged.
+
+- `masks.mask_to_coco_instances(mask, ...)`: one COCO annotation per connected component of an `(H, W)` label map or `(K, H, W)` stack. Polygons are traced on a 2x grid so 1-px lines and 2-px dots keep a non-zero area; `segmentation='auto'` (default) writes RLE only for components with holes, `'polygon'` fills holes, `'rle'` always RLE; `epsilon` simplifies polygons (default 0, lossless). `masks.coco_instances_to_mask` is the inverse; `masks.write_coco_folder(patch_dir, out_dir, class_names)` writes `train/` + `valid/` with 8-bit PNGs and `_annotations.coco.json` from the patch cache (single-channel caches only; 16-bit divided by 257).
+- Round trip mask -> COCO -> mask, per case (IoU, wrong pixels), measured with our decoder and again with `pycocotools` (`frPyObjects` + `decode`, throwaway venv; both agree to the pixel):
+
+  | case | `auto` (default) | `polygon` | `rle` |
+  |---|---|---|---|
+  | 1-px thin diagonal line | 1.0000, 0 wrong px | 1.0000, 0 | 1.0000, 0 |
+  | 1-px thin horizontal line | 1.0000, 0 | 1.0000, 0 | 1.0000, 0 |
+  | 1-px dot | 1.0000, 0 | 1.0000, 0 | 1.0000, 0 |
+  | 2-px dot (2x2) | 1.0000, 0 | 1.0000, 0 | 1.0000, 0 |
+  | square with hole | 1.0000, 0 (RLE) | 0.8889, 100 (hole filled) | 1.0000, 0 |
+  | island inside hole | 1.0000, 0 | 0.9339, 32 (ring hole filled) | 1.0000, 0 |
+
+  `epsilon=0.5` on a radius-20 disc: 552 -> 104 numbers at IoU 0.975. Not verified: RF-DETR's own loader on the uncompressed RLE that `auto` writes for components with holes, and its resize to training resolution.
+- `write_coco_folder` raises `ValueError` when a mask value exceeds the number of `class_names` (it used to write a `category_id` with no entry in `categories`). 16-bit images divided by 257 are lossy.
+- `inference.detections_to_semantic(dets, shape, class_ids, rule='score', output='labels'|'stack', threshold)`: `(H, W)` long labels or `(K, H, W)` float best scores; higher score wins overlaps; equal scores: the later detection wins; class id 0 or below raises (ids start at 1); works with `supervision.Detections`-like objects or a plain tuple; consumed by `ObjectMetrics`, `SegMetrics`, `review_report.Sample`.
+- `tutorials/09_rfdetr_bridge.ipynb` (rfdetr cells optional, guarded by `RUN_RFDETR`), `docs/TRAINING_CLI.md` section, `choose-model-architecture` and `run-inference` skills. Recipe gotchas recorded: reload with `RFDETR.from_checkpoint` before `predict`; prefer `last_ema.pth` over `checkpoint_best_total.pth` on small data; ONNX is fixed batch 1.
+
+---
+
 ## 2026-10-18
 
 Custom UNet clean-ups from the #64/#65 reviews (#97, replaces #94, map #12). No change for valid configs: parameter counts and state_dict keys are pinned by a test for every bottleneck and block style.

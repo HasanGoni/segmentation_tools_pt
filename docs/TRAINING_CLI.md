@@ -460,6 +460,26 @@ values. Try it without data: `make_dummy_samples(12, task='multilabel', dtype='u
 Click-to-comment feedback, gates and the summary text arrive with #51 / #52; evaluation and
 embedding work add their own sections to this same page (maps #28, #39, #48).
 
+### RF-DETR instance models (outside the library, issues #99 / #101)
+
+RF-DETR segmentation is an instance model, so it is trained outside `segpt-train` and the
+library never imports `rfdetr`. Two bridge functions connect it to our data and metrics:
+
+```python
+from segmentation_tools_pt.masks import write_coco_folder
+from segmentation_tools_pt.inference import detections_to_semantic
+
+write_coco_folder('patches', 'coco', class_names=['defect'])    # patch cache -> coco/{train,valid}/_annotations.coco.json
+sem = detections_to_semantic(dets, class_ids=[1])               # RF-DETR detections -> (H, W) long; higher score wins overlaps
+```
+
+Holes are written as RLE, everything else as lossless polygons (`segmentation='auto'`);
+`segmentation='polygon'` fills holes. Gotchas: reload with `RFDETR.from_checkpoint(...)` before
+`predict` (a just-trained 1-channel model fails); prefer `last_ema.pth` over
+`checkpoint_best_total.pth` on small data; ONNX export is fixed batch 1 and fixed size, and its
+`dets/labels/masks` outputs do not follow our `export_onnx` conventions. Walkthrough:
+`tutorials/09_rfdetr_bridge.ipynb`; research: `docs/superpowers/specs/2026-11-22-rfdetr-seg-integration-research.md`.
+
 ---
 
 ## 6. CLI overrides (Hydra)
