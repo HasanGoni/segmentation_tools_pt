@@ -51,9 +51,9 @@ Implementation contract: `docs/agents/nbdev-implementation-contract.md`.
 
 ```
 segmentation_tools_pt/
-├── nbs/          ← SOURCE OF TRUTH (edit here); 00_core … 16_review_report notebooks → src/
+├── nbs/          ← SOURCE OF TRUTH (edit here); 00_core … 17_eval notebooks → src/
 ├── src/segmentation_tools_pt/  ← AUTO-GENERATED (do not edit)
-├── scripts/      # build.py (segpt-build), train.py (segpt-train) — Hydra entry points
+├── scripts/      # build.py (segpt-build), train.py (segpt-train) — Hydra entry points; heldout_compare/semantic_threshold_sweep/_bench_common are thin wrappers over `eval`
 ├── configs/      # data_patch.yaml (shared base), build.yaml, train.yaml, *_example.yaml, model/ presets
 ├── docs/         # TRAINING_CLI.md, agents/ (issue-tracker, domain, repo-guide), adr/, superpowers/specs/
 ├── hpc/          # submit.sh (bsub job script) + README (HPC guide, large-dataset strategies)
@@ -67,7 +67,7 @@ segmentation_tools_pt/
 Notebook → module mapping: `00_core`, `01_channels`, `02_masks`, `03_patches`,
 `04_dataset_build`, `05_transforms`, `06_dataset`, `07_losses`, `08_metrics`, `09_model`,
 `10_train`, `11_inference`, `12_visualize`, `13_export`, `14_cli`, `15_hydra_pipeline`,
-`16_review_report` —
+`16_review_report`, `17_eval` —
 each notebook generates the correspondingly named module in `src/`.
 
 ---
@@ -89,8 +89,9 @@ each notebook generates the correspondingly named module in `src/`.
 | `inference.py` | `predict` (sliding window), `predict_tiled` (batched tiles), decode/morph/hierarchy, threshold sweep |
 | `visualize.py` | overlay masks, top-loss grids, error posters |
 | `export.py` | ONNX export + verification, task/class_names metadata |
-| `cli.py` | `segpt-build` / `segpt-train` / `segpt-submit` entry points |
+| `cli.py` | `segpt-build` / `segpt-train` / `segpt-submit` / `segpt-eval` entry points |
 | `hydra_pipeline.py` | shared Hydra resolvers (batch augs, mask, inference, class-morph configs) |
+| `eval.py` | evaluate/compare finished runs: per-patch IoU + object counts, threshold sweep, held-out threshold choice, arms + `decide` rule, comparison table (`run_eval`) |
 | `review_report.py` | single self-contained HTML review report (overlay section, `Sample`, section registry); other maps add sections, not renderers |
 
 **Gotchas and per-module detail** (dataset dict-return, `channel_names` mismatch, patch-cache
@@ -127,6 +128,7 @@ every block lives in `docs/agents/repo-guide.md`, and daily driving is covered b
 |---|---|
 | `segpt-build` | Hydra-driven patch-cache preparation (`configs/build.yaml`) |
 | `segpt-train` | Hydra-driven end-to-end training (`configs/train.yaml`) |
+| `segpt-eval` | Scores finished runs (`RUN...`, patch mode) with shared IoU/object code, threshold sweep (`--heldout` = threshold chosen on one half of the source images), one comparison table; fails if val ids differ |
 | `segpt-submit` | Submits a build/training job to LSF HPC via `bsub`; reads `hpc:` from config; `--dry-run` to verify |
 
 Examples:

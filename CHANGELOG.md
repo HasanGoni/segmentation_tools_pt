@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-11-23
+
+`segpt-eval`: evaluate and compare finished runs (#109, slice 1 of #108).
+
+- New notebook/module `nbs/17_eval.ipynb` -> `segmentation_tools_pt.eval`: per-patch IoU and object counts for any class list, `score_dataset` (model run once, many thresholds), `sweep_run`/`evaluate_run` (rebuild a run from `.hydra/config.yaml` + `checkpoints/best.pth`), held-out threshold choice (`split_halves`, `held_out`: halves of the source images, both directions, ties to the higher threshold), seed arms (`arm_name`, `arm_summary`), the #106 go/no-go rule (`decide`; constants `MIN_GAIN`, `NOISE_FACTOR`, `IOU_MARGIN` unchanged), `compare_runs`/`format_table`, and `run_eval`. Classes come from the run config; object F1 and the held-out choice use `objects_class` (default: the last class, `lifted` for chip/lifted data).
+- New command `segpt-eval RUN [RUN...]` (`cli.segpt_eval`, plain argparse): `--thresholds`, `--threshold`, `--heldout`, `--objects-class`, `--out`, `--report-dir` + `--ids`, `--device`. Writes `<run>.json`, `<run>_per_patch.json`, `comparison.json` and prints one table. Exits 1 if the runs' val-id fingerprints (or class lists) differ.
+- `scripts/_bench_common.py`, `scripts/semantic_threshold_sweep.py`, `scripts/heldout_compare.py` are now thin wrappers over the library (`scripts/rfdetr_benchmark.py` still imports `_bench_common` unchanged); the `heldout_compare.py --selftest` became `#| test` cells in `17_eval`.
+- Check: `run_eval(..., heldout=True)` on `outputs/confirm_106/{resnet18,convnext_tiny}_e15_s{42,43}` reproduces the two U-Net arms of `docs/superpowers/specs/data/2026-11-23-rfdetr-confirmation-heldout.json` exactly (max abs difference 0.0 over all arm means and spreads).
+- Docs: `docs/TRAINING_CLI.md` section 6b, `AGENTS.md` tables, skill `model-comparison-ab-test`, `tutorials/10_segpt_eval.ipynb`.
+
+---
+
 ## 2026-11-22
 
 RF-DETR bridge: instance-model data and output converters (#101, map #100, research #99). Nothing imports `rfdetr`; the functions take plain arrays and `pyproject.toml` is unchanged.
