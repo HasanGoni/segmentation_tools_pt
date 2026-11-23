@@ -102,6 +102,7 @@ Use it only after the decision rule below says an instance model is wanted. The 
 - Back to our metrics: `inference.detections_to_semantic(dets, class_ids=[0, 1], first_class_id=0)` -> `(H, W)` long (RF-DETR ids are model-dependent: check `model.class_names` and `set(dets.class_id)`, #102)
   (or `output='stack'` for `(K, H, W)` scores); overlap: higher score wins. Feed `ObjectMetrics`,
   `SegMetrics`, `review_report.Sample`.
+- Compare with a U-Net run: `segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout` puts both in one table (RF-DETR default threshold grid `0.01 ... 0.7`, `rfdetr.load_rfdetr_predictor(run_dir)` to predict, review report via `--report-dir`); see `model-comparison-ab-test`.
 - Gotchas: reload with `RFDETR.from_checkpoint(...)` before `predict` (a just-trained 1-channel model
   fails); prefer `last_ema.pth` over `checkpoint_best_total.pth` on small data; ONNX is fixed batch 1
   and fixed size (own `dets/labels/masks` outputs, not our `export_onnx` format).
@@ -115,4 +116,4 @@ Use it only after the decision rule below says an instance model is wanted. The 
 - `src/segmentation_tools_pt/hydra_pipeline.py` — `resolve_train_schedule` (returns `TrainSchedule`; neutralises freeze/LR for `custom_unet`).
 - Hydra packages: `configs/model/{mobilenet_v2,dinov3_vit_small,convnext_tiny,efficientnetv2_s}.yaml`.
 - Source notebook: `nbs/09_model.ipynb`; tutorial: `tutorials/08_custom_unet.ipynb`.
-- RF-DETR: `nbs/18_rfdetr.ipynb` (`rfdetr.train_rfdetr`, `is_rfdetr_cfg`); bridge: `masks.write_coco_folder`, `masks.mask_to_coco_instances`, `inference.detections_to_semantic` (`nbs/02_masks.ipynb`, `nbs/11_inference.ipynb`).
+- RF-DETR: `nbs/18_rfdetr.ipynb` (`rfdetr.train_rfdetr`, `is_rfdetr_cfg`, `load_rfdetr_predictor`, `RFDETRPredictor`); bridge: `masks.write_coco_folder`, `masks.mask_to_coco_instances`, `inference.detections_to_semantic` (`nbs/02_masks.ipynb`, `nbs/11_inference.ipynb`).

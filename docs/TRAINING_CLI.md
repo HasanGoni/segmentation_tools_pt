@@ -537,12 +537,13 @@ python scripts/train.py data.raw_dir=... data.patch_dir=...
 
 ## 6b. Compare finished runs (`segpt-eval`, issue #109)
 
-`segpt-eval RUN [RUN...]` scores finished runs on their val split with one shared code path (IoU per class plus connected-component object counts), sweeps the probability threshold, and prints **one comparison table**. A run is a directory with `.hydra/config.yaml` and `checkpoints/best.pth`; class names, model and data come from that config, nothing is hard-coded. Patch-mode runs only.
+`segpt-eval RUN [RUN...]` scores finished runs on their val split with one shared code path (IoU per class plus connected-component object counts), sweeps the probability threshold, and prints **one comparison table**. A run is a directory with `.hydra/config.yaml` and `checkpoints/best.pth` (an RF-DETR run: `checkpoints/last_ema.pth`, see below); class names, model and data come from that config, nothing is hard-coded. Patch-mode runs only.
 
 ```bash
 segpt-eval outputs/a_s42 outputs/b_s42                       # one row per arm at --threshold 0.5
 segpt-eval outputs/a_s42 outputs/a_s43 outputs/b_s42 outputs/b_s43 --heldout --out eval_out
 segpt-eval outputs/a_s42 --thresholds 0.3 0.5 0.9 --threshold 0.3
+segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout   # U-Net and RF-DETR in one table
 ```
 
 - **Arms.** Directory names that differ only by a trailing `_s<seed>` are seeds of one arm (`resnet18_e15_s42`, `resnet18_e15_s43` -> `resnet18_e15`); the table shows the mean and, for two or more runs, `+-` the seed spread.
@@ -550,6 +551,14 @@ segpt-eval outputs/a_s42 --thresholds 0.3 0.5 0.9 --threshold 0.3
 - **Fingerprint check.** Every run must have the same val patch ids (and classes); otherwise the command prints both fingerprints and exits 1.
 - **Outputs** in `--out` (default `eval_out/`): `<run>.json` (all thresholds, held-out directions), `<run>_per_patch.json` (per-patch rows, input for `scripts/heldout_compare.py`), `comparison.json`.
 - **Review report.** `--report-dir DIR --ids ids.json` builds a `review_report` page for the val patch ids in `ids.json` (a JSON list).
+- **RF-DETR runs (#111).** A run with `model.source: rfdetr` is detected from its config and loaded with `RFDETR.from_checkpoint(checkpoints/last_ema.pth)` (lazy import; without `rfdetr` you get the install hint). Each val patch is predicted **once**, at the lowest swept score, and the detections are rasterised per threshold with `detections_to_semantic(first_class_id=0, output='stack')`, so a U-Net run and an RF-DETR run score through the same sweep, held-out choice, fingerprint check and table:
+
+  ```bash
+  segpt-eval outputs/resnet18_e15_s42 outputs/rfdetr_small_s42 --heldout    # one table, two model families
+  ```
+
+  Run `segpt-eval` for RF-DETR runs in the environment that has `rfdetr` (`uv sync --extra rfdetr --prerelease=allow`); it also needs `hydra`/`smp` for the data side. Without `--thresholds` every run uses **its own grid**: U-Net probabilities `0.05 ... 0.9999` (13 points), RF-DETR scores `0.01 0.03 0.05 0.1 0.2 0.3 0.5 0.7` (RF-DETR scores are not calibrated probabilities; in #106 the best held-out threshold was 0.1 to 0.3). `--thresholds a b c` overrides the grid for every run; the held-out choice is always per run. The patch size of the cache must equal `train.crop_size` (RF-DETR sees the raw patch).
+  In Python: `rfdetr.load_rfdetr_predictor(run_dir)` returns an `RFDETRPredictor`; `predictor(image, threshold=0.5)` is a `(K, H, W)` score map (`> 0` is the prediction) and `predictor.detections(image, floor)` + `predictor.stack(dets, shape, t)` is the predict-once, cut-many form. The review report (`--report-dir`) works for RF-DETR runs the same way.
 - **Python.** `from segmentation_tools_pt.eval import run_eval, evaluate_run, compare_runs, held_out, decide`. The go/no-go rule used for #106 is `decide`. Walkthrough: `tutorials/10_segpt_eval.ipynb`.
 
 ---
