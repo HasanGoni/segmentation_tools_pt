@@ -23,7 +23,6 @@ from segmentation_tools_pt.transforms import get_val_transforms
 from _bench_common import aggregate, ids_sha1, patch_scores
 
 
-
 @torch.no_grad()
 def sweep(run_dir, thresholds, report_ids=None, report_threshold=0.5, device='cuda' if torch.cuda.is_available() else 'cpu'):
     cfg = OmegaConf.load(Path(run_dir) / '.hydra' / 'config.yaml')

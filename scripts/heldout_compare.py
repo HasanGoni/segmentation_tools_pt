@@ -1,7 +1,7 @@
 """Held-out threshold comparison of RF-DETR vs semantic arms and the go/no-go rule (issue #106).
 
 Rule and procedure: `docs/superpowers/specs/2026-11-22-rfdetr-confirmation-plan.md` (written before the runs finished).
-Inputs are the `per_patch.json` files written by `rfdetr_benchmark.py eval` and `semantic_threshold_sweep.py`.
+Inputs are `per_patch.json` (written by `rfdetr_benchmark.py eval`) and `<out>_per_patch.json` (written next to `--out` by `semantic_threshold_sweep.py`).
 
     python scripts/heldout_compare.py --metadata outputs/hierarchy_ab/patches/metadata.json --candidate rfdetr \\
         --arm rfdetr=a/per_patch.json,b/per_patch.json --arm unet_r18_e15=c/per_patch.json,d/per_patch.json --out heldout.json
@@ -85,7 +85,6 @@ def _selftest():
     a, b = split_halves(ids)
     assert a.isdisjoint(b) and a | b == set(ids) and abs(len(a) - len(b)) <= 1
     assert split_halves(ids) == (a, b) and split_halves(reversed(ids)) == (a, b)
-    # two patches per source; threshold '0.1' finds everything with many false alarms, '0.5' misses one object but is clean
     stem_source = {f'{s}_{k}': s for s in ids for k in 'ab'}
 
     def row(det, tot, fa):
@@ -93,10 +92,8 @@ def _selftest():
                     lifted_total=tot, lifted_detected=det, lifted_false_alarms=fa)
     by_t = {'0.1': {s: row(2, 2, 3) for s in stem_source}, '0.5': {s: row(1, 2, 0) for s in stem_source}}
     d = held_out(by_t, stem_source, (a, b))
-    # F1(0.1) = 2*2/(2*2+0+3) = 4/7 ; F1(0.5) = 2*1/(2*1+1+0) = 2/3 -> 0.5 wins on both halves
     assert [x['threshold'] for x in d] == [0.5, 0.5] and abs(d[0]['f1_lifted'] - 2 / 3) < 1e-9, d
     assert d[0]['lifted_total'] == 2 * len([s for s in stem_source if stem_source[s] in b]) and d[1]['lifted_false_alarms'] == 0
-    # ties go to the higher threshold
     tie = {'0.1': {s: row(1, 2, 0) for s in stem_source}, '0.5': {s: row(1, 2, 0) for s in stem_source}}
     assert [x['threshold'] for x in held_out(tie, stem_source, (a, b))] == [0.5, 0.5]
     # selection uses only the selection half: make threshold 0.1 great on half A's patches, awful on B's
@@ -105,7 +102,6 @@ def _selftest():
     d2 = held_out(by_t2, stem_source, (a, b))
     assert d2[0]['threshold'] == 0.1 and d2[1]['threshold'] == 0.5      # A->B picks 0.1 on A; B->A picks 0.5 on B
     assert d2[0]['lifted_detected'] == 0                                # ... and then scores 0.1 on B: it does not transfer
-    # arm statistics and the rule
     assert abs(arm_summary([{'f1_lifted': .5, 'lifted_recall': 0, 'lifted_false_alarms': 0, 'iou_lifted': 0, 'iou_chip': 0},
                             {'f1_lifted': .6, 'lifted_recall': 0, 'lifted_false_alarms': 0, 'iou_lifted': 0, 'iou_chip': 0}])['f1_lifted_spread'] - .05) < 1e-9
 
