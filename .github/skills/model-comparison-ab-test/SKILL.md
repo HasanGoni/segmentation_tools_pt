@@ -1,6 +1,6 @@
 ---
 name: model-comparison-ab-test
-description: 'Compare finished segmentation runs on one scale with `segpt-eval` (shared IoU + object metrics, threshold sweep, held-out threshold choice, seed arms, val-id fingerprint check). Use when a user asks "is model A better than model B?", "compare two runs/checkpoints", "which seed/encoder is better", "held-out threshold", or "A/B test segmentation". Paired bootstrap / McNemar significance tests are NOT implemented yet.'
+description: 'Compare finished segmentation runs on one scale with `segpt-eval` (U-Net and RF-DETR runs in one table; shared IoU + object metrics, threshold sweep, held-out threshold choice, seed arms, val-id fingerprint check). Use when a user asks "is model A better than model B?", "compare two runs/checkpoints", "which seed/encoder is better", "held-out threshold", or "A/B test segmentation". Paired bootstrap / McNemar significance tests are NOT implemented yet.'
 argument-hint: '[optional] two or more run directories'
 user-invocable: true
 disable-model-invocation: false
@@ -22,6 +22,10 @@ segpt-eval outputs/a_s42 outputs/a_s43 outputs/b_s42 outputs/b_s43 --heldout --o
 ```
 
 - A run = directory with `.hydra/config.yaml` + `checkpoints/best.pth`; patch mode only (`data.patch_mode: true`).
+- **RF-DETR runs** (`model.source: rfdetr`, `checkpoints/last_ema.pth`) are detected from the config and can be mixed with U-Net runs:
+  `segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout`. Run it in the environment that has `rfdetr`. Each run uses its own default
+  threshold grid (U-Net `0.05 ... 0.9999`, RF-DETR `0.01 ... 0.7`); `--thresholds` overrides it for all runs. The same fingerprint check applies,
+  and the held-out threshold is chosen per run, so each arm is scored at its own operating point.
 - Directories that differ only by a trailing `_s<seed>` are one **arm**: table shows mean `+-` spread.
 - `--heldout`: threshold picked on half A (best object F1 of `--objects-class`, default the last class), scored on half B, and vice versa; halves are split by `source_id` so neighbouring patches never leak.
 - The command **fails (exit 1)** if the runs' val-id fingerprints or class names differ. Do not work around it: it means the runs saw different patches (different patch cache or seed for `val_fraction`).

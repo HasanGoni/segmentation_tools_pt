@@ -15,15 +15,17 @@ from pathlib import Path
 import numpy as np
 
 from .metrics import object_metrics
+from .rfdetr import RFDETR_THRESHOLDS, is_rfdetr_cfg, load_rfdetr_predictor
 
 __all__ = ['MIN_GAIN', 'NOISE_FACTOR', 'IOU_MARGIN', 'DEFAULT_THRESHOLDS', 'iou', 'patch_scores', 'aggregate', 'object_f1',
-           'ids_sha1', 'split_halves', 'held_out', 'run_summary', 'arm_summary', 'decide', 'score_dataset', 'sweep_run',
+           'ids_sha1', 'split_halves', 'held_out', 'run_summary', 'arm_summary', 'decide', 'score_dataset', 'score_rfdetr', 'sweep_run',
            'evaluate_run', 'arm_name', 'check_fingerprints', 'compare_runs', 'format_table', 'run_eval']
 
 # %% auto #0
 __all__ = ['DEFAULT_THRESHOLDS', 'MIN_GAIN', 'NOISE_FACTOR', 'IOU_MARGIN', 'iou', 'patch_scores', 'aggregate', 'object_f1',
-           'ids_sha1', 'score_dataset', 'split_halves', 'held_out', 'run_summary', 'arm_summary', 'decide', 'sweep_run',
-           'arm_name', 'evaluate_run', 'check_fingerprints', 'compare_runs', 'format_table', 'run_eval']
+           'ids_sha1', 'score_dataset', 'score_rfdetr', 'split_halves', 'held_out', 'run_summary', 'arm_summary',
+           'decide', 'sweep_run', 'arm_name', 'evaluate_run', 'check_fingerprints', 'compare_runs', 'format_table',
+           'run_eval']
 
 # %% ../../nbs/17_eval.ipynb #fa596ff1
 DEFAULT_THRESHOLDS = (0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99, 0.995, 0.999, 0.9995, 0.9999)
@@ -95,6 +97,29 @@ def score_dataset(model, ds, thresholds, classes, device='cpu', batch_size=16, r
                 for k, sid in enumerate(b['sample_id']):
                     rows[str(t)][sid] = patch_scores(pred[k], gt[k], classes)
     return rows, keep
+
+# %% ../../nbs/17_eval.ipynb #a7a77fed
+def score_rfdetr(predictor, ds, thresholds, classes, report_ids=None, report_threshold=0.5, image_for=None):
+    """Per-patch rows at every threshold for an RF-DETR predictor: `({str(t): {sample_id: row}}, keep)`, like `score_dataset`.
+
+    `predictor` is an `RFDETRPredictor`; `ds` items are dicts with `mask` and `sample_id`; `image_for(sample_id)` returns the raw patch.
+    Each patch is predicted once, at the lowest of `thresholds` (and of `report_threshold` when `report_ids` is given).
+    """
+    floor = min(list(thresholds) + ([report_threshold] if report_ids else []))
+    rows = {str(t): {} for t in thresholds}
+    keep = {}
+    for item in ds:
+        sid, gt = item['sample_id'], item['mask'].bool().numpy()
+        img = image_for(sid)
+        if img.shape[:2] != gt.shape[1:]:
+            raise ValueError(f'{sid}: image is {img.shape[:2]} but the mask is {gt.shape[1:]}; RF-DETR needs the cache patch size to equal train.crop_size')
+        dets = predictor.detections(img, floor)
+        for t in thresholds:
+            rows[str(t)][sid] = patch_scores(predictor.stack(dets, gt.shape[1:], t) > 0, gt, classes)
+        if report_ids is not None and sid in report_ids:
+            keep[sid] = (img, gt, predictor.stack(dets, gt.shape[1:], report_threshold) > 0)
+    return rows, keep
+
 
 # %% ../../nbs/17_eval.ipynb #43cafd7a
 MIN_GAIN = 0.01        # F1 gain a candidate needs over the best other arm, on top of the seed noise
@@ -186,8 +211,11 @@ def _load_run(run_dir):
     return cfg, preset, Path(root), ds, list(mask_cfg['class_names'])
 
 
-def sweep_run(run_dir, thresholds=DEFAULT_THRESHOLDS, report_ids=None, report_threshold=0.5, device=None, batch_size=16):
-    """Score a finished run's `best.pth` on its val split at every threshold.
+def sweep_run(run_dir, thresholds=None, report_ids=None, report_threshold=0.5, device=None, batch_size=16, loader=None):
+    """Score a finished run on its val split at every threshold: `best.pth` for a U-Net run, `last_ema.pth` for an RF-DETR run.
+
+    `thresholds=None` means the run's own default grid: `DEFAULT_THRESHOLDS`, or `RFDETR_THRESHOLDS` for RF-DETR (its scores are
+    not probabilities, the useful range sits lower). `loader(ckpt)` replaces the RF-DETR model loader (tests).
 
     Returns `(by_threshold, keep, val_ids_sha1, per_patch, info)` where `by_threshold` is `{str(t): aggregate}`, `per_patch`
     is `{str(t): {patch_id: row}}` and `info` carries `classes`, the patch `root` and the run `cfg`.
@@ -197,10 +225,17 @@ def sweep_run(run_dir, thresholds=DEFAULT_THRESHOLDS, report_ids=None, report_th
     from segmentation_tools_pt.model import get_model_from_cfg
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
     cfg, preset, root, ds, classes = _load_run(run_dir)
+    image_for = lambda sid: cv2.imread(str(root / 'val' / 'images' / f'{sid}.png'), cv2.IMREAD_UNCHANGED)
+    if is_rfdetr_cfg(cfg):
+        thresholds = RFDETR_THRESHOLDS if thresholds is None else thresholds
+        predictor = load_rfdetr_predictor(run_dir, num_classes=len(classes), loader=loader)
+        rows, keep = score_rfdetr(predictor, ds, thresholds, classes, report_ids, report_threshold, image_for)
+        by_t = {t: aggregate(r.values(), classes) for t, r in rows.items()}
+        return by_t, keep, ids_sha1(ds.sample_ids), rows, {'classes': classes, 'root': root, 'cfg': cfg}
+    thresholds = DEFAULT_THRESHOLDS if thresholds is None else thresholds
     model = get_model_from_cfg(cfg, preset['in_channels'], crop_size=resolve_crop_size(cfg), pretrained=False)
     ckpt = torch.load(Path(run_dir) / 'checkpoints' / 'best.pth', map_location='cpu', weights_only=True)
     model.load_state_dict(ckpt['model_state'])
-    image_for = lambda sid: cv2.imread(str(root / 'val' / 'images' / f'{sid}.png'), cv2.IMREAD_UNCHANGED)
     rows, keep = score_dataset(model, ds, thresholds, classes, device, batch_size, report_ids, report_threshold, image_for)
     by_t = {t: aggregate(r.values(), classes) for t, r in rows.items()}
     return by_t, keep, ids_sha1(ds.sample_ids), rows, {'classes': classes, 'root': root, 'cfg': cfg}
@@ -211,13 +246,13 @@ def arm_name(run_dir):
     return re.sub(r'_s\d+$', '', Path(run_dir).resolve().name)
 
 
-def evaluate_run(run_dir, thresholds=DEFAULT_THRESHOLDS, heldout=False, objects_class=None, report_ids=None,
-                 report_threshold=0.5, device=None, batch_size=16):
+def evaluate_run(run_dir, thresholds=None, heldout=False, objects_class=None, report_ids=None,
+                 report_threshold=0.5, device=None, batch_size=16, loader=None):
     """Sweep one finished run; with `heldout=True` also choose the threshold on one half of the source images and score the other.
 
-    Returns a JSON-ready dict; the heavy parts sit under `_per_patch` and `_keep` (drop them before dumping).
+    Dispatches on the run config: an RF-DETR run is scored with `score_rfdetr`. Returns a JSON-ready dict; the heavy parts sit under `_per_patch` and `_keep` (drop them before dumping).
     """
-    by_t, keep, sha, per_patch, info = sweep_run(run_dir, thresholds, report_ids, report_threshold, device, batch_size)
+    by_t, keep, sha, per_patch, info = sweep_run(run_dir, thresholds, report_ids, report_threshold, device, batch_size, loader)
     classes = info['classes']
     cls = objects_class or classes[-1]
     if cls not in classes:
@@ -295,9 +330,9 @@ def format_table(cmp):
     return f"val ids {cmp['val_ids_sha1'][:12]} | {cmp['mode']} | classes {','.join(classes)}\n" + '\n'.join(out)
 
 # %% ../../nbs/17_eval.ipynb #aa672519
-def run_eval(runs, thresholds=DEFAULT_THRESHOLDS, heldout=False, out='eval_out', report_dir=None, report_ids=None,
-             report_threshold=0.5, objects_class=None, threshold=0.5, device=None, batch_size=16, echo=print):
-    "Evaluate finished runs, write `<out>/<run>.json`, `<out>/<run>_per_patch.json` and `<out>/comparison.json`, print one table; returns the comparison dict."
+def run_eval(runs, thresholds=None, heldout=False, out='eval_out', report_dir=None, report_ids=None,
+             report_threshold=0.5, objects_class=None, threshold=0.5, device=None, batch_size=16, echo=print, loader=None):
+    "Evaluate finished runs (U-Net and RF-DETR runs side by side; `thresholds=None` = each run's own grid), write `<out>/<run>.json`, `<out>/<run>_per_patch.json` and `<out>/comparison.json`, print one table; returns the comparison dict."
     names = [Path(r).resolve().name for r in runs]
     if len(set(names)) != len(names):
         raise ValueError(f'run directory names must be unique, got {names}')
@@ -305,7 +340,7 @@ def run_eval(runs, thresholds=DEFAULT_THRESHOLDS, heldout=False, out='eval_out',
     results = []
     for r in runs:
         echo(f'[segpt-eval] {r}')
-        res = evaluate_run(r, thresholds, heldout, objects_class, report_ids, report_threshold, device, batch_size)
+        res = evaluate_run(r, thresholds, heldout, objects_class, report_ids, report_threshold, device, batch_size, loader)
         per_patch, keep = res.pop('_per_patch'), res.pop('_keep')
         (out / f"{res['run']}.json").write_text(json.dumps(res, indent=1))
         (out / f"{res['run']}_per_patch.json").write_text(json.dumps(per_patch))

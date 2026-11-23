@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-11-23
 
+`segpt-eval` and `inference` load RF-DETR runs (#111, slice 3 of #108).
+
+- `nbs/18_rfdetr.ipynb`: `rfdetr_checkpoint`, `rfdetr_loader` (lazy `RFDETR.from_checkpoint`, install hint), `RFDETRPredictor` (`detections` once at a floor, `stack` per threshold via `detections_to_semantic(first_class_id=0, output='stack')`, `__call__` for one threshold), `load_rfdetr_predictor(run_dir)` and `RFDETR_THRESHOLDS = (0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7)`.
+- `nbs/17_eval.ipynb`: `score_rfdetr` (one prediction per patch, rows identical in shape to `score_dataset`); `sweep_run`/`evaluate_run`/`run_eval` dispatch on `model.source` and take `thresholds=None` = each run's own grid; the review report (`--report-dir`) works for RF-DETR runs. Sweep, held-out choice, fingerprint check and table are unchanged, so U-Net and RF-DETR runs share one table.
+- `segpt-eval --thresholds` now defaults to the per-model grids (was the U-Net grid); explicit values still apply to all runs.
+- Check: `segpt-eval confirm_106/resnet18_e15_s42 <rf_s1 as a segpt-style run> --heldout --report-dir ...` gives one table; the RF-DETR held-out F1 is 0.9394035982433773 with thresholds 0.1,0.2, identical to the second RF-DETR run in `2026-11-23-rfdetr-confirmation-heldout.json`.
+- Docs: `docs/TRAINING_CLI.md` 6b, skills `run-inference`, `model-comparison-ab-test`, `choose-model-architecture`, `tutorials/10_segpt_eval.ipynb`.
+
 `segpt-eval`: evaluate and compare finished runs (#109, slice 1 of #108).
 
 - New notebook/module `nbs/17_eval.ipynb` -> `segmentation_tools_pt.eval`: per-patch IoU and object counts for any class list, `score_dataset` (model run once, many thresholds), `sweep_run`/`evaluate_run` (rebuild a run from `.hydra/config.yaml` + `checkpoints/best.pth`), held-out threshold choice (`split_halves`, `held_out`: halves of the source images, both directions, ties to the higher threshold), seed arms (`arm_name`, `arm_summary`), the #106 go/no-go rule (`decide`; constants `MIN_GAIN`, `NOISE_FACTOR`, `IOU_MARGIN` unchanged), `compare_runs`/`format_table`, and `run_eval`. Classes come from the run config; object F1 and the held-out choice use `objects_class` (default: the last class, `lifted` for chip/lifted data).

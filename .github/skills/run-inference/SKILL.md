@@ -81,8 +81,18 @@ Images smaller than one tile are zero-padded up; clamped tile starts cover every
 `detections_to_semantic(dets, class_ids=[0, 1], first_class_id=0)` (RF-DETR's 2-class model returned 0-based ids; check `set(dets.class_id)` and pass `first_class_id` to match) paints `.mask (N,H,W)`, `.class_id`, `.confidence`
 (plain arrays or a `supervision.Detections`) into an `(H, W)` long map; `output='stack'` gives
 `(K, H, W)` best scores per class; `threshold=` drops weak detections; the higher score wins overlaps.
-RF-DETR itself runs outside the library (reload with `RFDETR.from_checkpoint`, prefer `last_ema.pth`);
-see `choose-model-architecture` and `tutorials/09_rfdetr_bridge.ipynb`.
+An RF-DETR **run** (`model.source: rfdetr`, trained by `segpt-train`) loads with the library:
+
+```python
+from segmentation_tools_pt.rfdetr import load_rfdetr_predictor   # lazy `import rfdetr`; install hint if missing
+pred = load_rfdetr_predictor('outputs/my_rfdetr_run')            # checkpoints/last_ema.pth, class count from .hydra/config.yaml
+score_map = pred(image_hw, threshold=0.2)                        # (K, H, W) float, > 0 is the prediction; image is the raw cache patch
+dets = pred.detections(image_hw, 0.01); pred.stack(dets, image_hw.shape[:2], 0.3)   # predict once, cut at many thresholds
+```
+
+`segpt-eval RUN... --report-dir DIR --ids ids.json` builds the review report for RF-DETR runs like for U-Net runs.
+RF-DETR scores are not probabilities (useful thresholds 0.1 to 0.3 in #106), so do not reuse the U-Net operating point.
+See `choose-model-architecture`, `model-comparison-ab-test` and `tutorials/09_rfdetr_bridge.ipynb`.
 
 ## Library anchors
 
