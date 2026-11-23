@@ -25,7 +25,7 @@ Rule: gain = 0.936 - 0.968 = -0.032; required > max(0.01, 2 x 0.012) = 0.024. **
 
 ## Caveats
 
-- **Grid-limited arms:** all four semantic runs of the 15-epoch arms selected the last grid points (0.99-0.9999; ResNet18 s42 and ConvNeXt s42/s43 picked 0.9999). Per Amendment 2 the grid is not extended again. This can only understate the semantic arms, which already win, so the verdict is conservative for RF-DETR's rival.
+- **Grid-limited arms:** in the 15-epoch arms, 5 of the 8 per-direction selections were the last grid point (0.9999: ResNet18 s42 both directions, ConvNeXt s42 both, ConvNeXt s43 one); the rest were 0.9995 or 0.99. Per Amendment 2 the grid is not extended again. This can only understate the semantic arms, which already win, so it does not threaten the no-go. The 6-epoch arm selected 0.995 / 0.9. RF-DETR never selected an edge point (0.1-0.3).
 - *Chip IoU of the 15-epoch U-Nets is low (0.41, 0.78) only because one shared threshold is chosen for lifted F1 and a threshold of 0.9999 cuts the chip class. It is not a model-quality number; the chip check passed because RF-DETR is higher, and it does not change the verdict. A per-class threshold was not part of the pre-registered rule.
 - RF-DETR seed 0 (the #102 run) was unseeded and was scored with the same 8-point grid as seeds 1-2; one RF-DETR size (Small) only, no larger RF-DETR tried.
 - The first launch of RF-DETR seeds 1 and 2 was killed by SIGTERM (no checkpoint); they were re-run from scratch, 15 epochs each.
