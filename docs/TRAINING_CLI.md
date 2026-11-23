@@ -15,7 +15,7 @@ uv sync               # creates .venv/, installs all deps + CLI commands
 source .venv/bin/activate
 ```
 
-`uv sync` reads `pyproject.toml` and `uv.lock` and installs everything — including the `segpt-build` and `segpt-train` entry points. No separate `pip install -e .` step is needed.
+`uv sync` reads `pyproject.toml` and `uv.lock` and installs everything — including the `segpt-build`, `segpt-train` and `segpt-eval` entry points. No separate `pip install -e .` step is needed.
 
 Verify the command is available:
 
@@ -532,6 +532,25 @@ segpt-train --config-path /path/to/configs --config-name train
 python scripts/build.py data.raw_dir=... data.patch_dir=...
 python scripts/train.py data.raw_dir=... data.patch_dir=...
 ```
+
+---
+
+## 6b. Compare finished runs (`segpt-eval`, issue #109)
+
+`segpt-eval RUN [RUN...]` scores finished runs on their val split with one shared code path (IoU per class plus connected-component object counts), sweeps the probability threshold, and prints **one comparison table**. A run is a directory with `.hydra/config.yaml` and `checkpoints/best.pth`; class names, model and data come from that config, nothing is hard-coded. Patch-mode runs only.
+
+```bash
+segpt-eval outputs/a_s42 outputs/b_s42                       # one row per arm at --threshold 0.5
+segpt-eval outputs/a_s42 outputs/a_s43 outputs/b_s42 outputs/b_s43 --heldout --out eval_out
+segpt-eval outputs/a_s42 --thresholds 0.3 0.5 0.9 --threshold 0.3
+```
+
+- **Arms.** Directory names that differ only by a trailing `_s<seed>` are seeds of one arm (`resnet18_e15_s42`, `resnet18_e15_s43` -> `resnet18_e15`); the table shows the mean and, for two or more runs, `+-` the seed spread.
+- **`--heldout`.** The best threshold is chosen on one half of the *source images* (object F1 of `--objects-class`, default the last class; ties go to the higher threshold) and scored on the other half, both ways, so the number is not tuned on what it reports.
+- **Fingerprint check.** Every run must have the same val patch ids (and classes); otherwise the command prints both fingerprints and exits 1.
+- **Outputs** in `--out` (default `eval_out/`): `<run>.json` (all thresholds, held-out directions), `<run>_per_patch.json` (per-patch rows, input for `scripts/heldout_compare.py`), `comparison.json`.
+- **Review report.** `--report-dir DIR --ids ids.json` builds a `review_report` page for the val patch ids in `ids.json` (a JSON list).
+- **Python.** `from segmentation_tools_pt.eval import run_eval, evaluate_run, compare_runs, held_out, decide`. The go/no-go rule used for #106 is `decide`. Walkthrough: `tutorials/10_segpt_eval.ipynb`.
 
 ---
 

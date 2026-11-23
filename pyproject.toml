@@ -50,6 +50,7 @@ Documentation = "https://hasangoni.github.io/segmentation_tools_pt/"
 segpt-build  = "segmentation_tools_pt.cli:segpt_build"
 segpt-train  = "segmentation_tools_pt.cli:segpt_train"
 segpt-submit = "segmentation_tools_pt.cli:segpt_submit"
+segpt-eval   = "segmentation_tools_pt.cli:segpt_eval"
 
 [project.entry-points.nbdev]
 segmentation_tools_pt = "segmentation_tools_pt._modidx:d"
