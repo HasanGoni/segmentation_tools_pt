@@ -1,0 +1,45 @@
+# Train RF-DETR instance segmentation with the same command as a U-Net:
+#   segpt-train configs/train_rfdetr_example.yaml data.raw_dir=... data.patch_dir=...
+#
+# What happens: the patch cache (patch mode only) is converted once to a COCO folder (`coco/` in the run dir),
+# RFDETRSeg{Nano,Small,Medium} trains on it, and the run dir gets `.hydra/config.yaml`,
+# `checkpoints/last_ema.pth` (the checkpoint to evaluate) and `checkpoints/history.json`.
+# Install (optional extra, pre-release packages; a separate environment is safest):
+#   uv sync --extra rfdetr --prerelease=allow
+# U-Net-only keys (loss.*, augment.*, metrics.*, freeze_epochs, monitoring.*, export.*) are ignored by RF-DETR.
+
+defaults:
+  - data_patch
+  - model: rfdetr_small      # rfdetr_nano | rfdetr_small | rfdetr_medium  (or model.arch=nano|small|medium)
+  - _self_
+
+data:
+  raw_dir: ???
+  patch_dir: ???
+  patch_mode: true          # required: RF-DETR trains from the patch cache
+  data_mode: single         # RF-DETR runs on the channels of data_mode; the benchmark used 1 channel
+  fit_rects: false
+  # Multilabel cache (classes may overlap): list the class names, one `masks/{id}_{name}.png` per class.
+  # mask_mode: per_class_files
+  # class_names: [chip, lifted]
+
+patch:
+  patch_size: 256
+  stride: 128
+  val_fraction: 0.20
+  seed: 42
+
+model:
+  source: rfdetr            # the dispatch key: segpt-train calls the RF-DETR trainer instead of get_model()
+  in_channels: 1            # must match data_mode
+
+train:
+  num_classes: 1            # K = len(class_names); only used by the U-Net path, keep it consistent
+  epochs: 15                # -> RF-DETR epochs
+  batch_size: 8             # -> RF-DETR batch_size
+  encoder_lr: 1.0e-4        # -> RF-DETR lr (RF-DETR has one learning rate); set train.lr to override it
+  # lr: 1.0e-4
+  crop_size: 256            # only checked against patch.patch_size
+  device: cuda
+  num_workers: 4
+  seed: 42                  # -> RF-DETR seed
