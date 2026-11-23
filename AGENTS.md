@@ -51,7 +51,7 @@ Implementation contract: `docs/agents/nbdev-implementation-contract.md`.
 
 ```
 segmentation_tools_pt/
-├── nbs/          ← SOURCE OF TRUTH (edit here); 00_core … 17_eval notebooks → src/
+├── nbs/          ← SOURCE OF TRUTH (edit here); 00_core … 18_rfdetr notebooks → src/
 ├── src/segmentation_tools_pt/  ← AUTO-GENERATED (do not edit)
 ├── scripts/      # build.py (segpt-build), train.py (segpt-train) — Hydra entry points; heldout_compare/semantic_threshold_sweep/_bench_common are thin wrappers over `eval`
 ├── configs/      # data_patch.yaml (shared base), build.yaml, train.yaml, *_example.yaml, model/ presets

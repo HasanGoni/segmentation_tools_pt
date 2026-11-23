@@ -17,9 +17,6 @@ import numpy as np
 from .metrics import object_metrics
 from .rfdetr import RFDETR_THRESHOLDS, is_rfdetr_cfg, load_rfdetr_predictor
 
-__all__ = ['MIN_GAIN', 'NOISE_FACTOR', 'IOU_MARGIN', 'DEFAULT_THRESHOLDS', 'iou', 'patch_scores', 'aggregate', 'object_f1',
-           'ids_sha1', 'split_halves', 'held_out', 'run_summary', 'arm_summary', 'decide', 'score_dataset', 'score_rfdetr', 'sweep_run',
-           'evaluate_run', 'arm_name', 'check_fingerprints', 'compare_runs', 'format_table', 'run_eval']
 
 # %% auto #0
 __all__ = ['DEFAULT_THRESHOLDS', 'MIN_GAIN', 'NOISE_FACTOR', 'IOU_MARGIN', 'iou', 'patch_scores', 'aggregate', 'object_f1',
@@ -176,8 +173,8 @@ def arm_summary(runs, objects_class=None, keys=None):
     return out
 
 
-def decide(arms, candidate, objects_class='lifted', iou_class='chip'):
-    "Apply the rule: go only if the candidate's F1 beats the best other arm by more than the noise and `iou_class` IoU is not worse."
+def decide(arms, candidate, objects_class, iou_class):
+    "Apply the rule: go only if the candidate's F1 on `objects_class` beats the best other arm by more than the noise and its `iou_class` IoU is not worse."
     f1, io = f'f1_{objects_class}', f'iou_{iou_class}'
     others = {n: a for n, a in arms.items() if n != candidate}
     best = max(others, key=lambda n: others[n][f1])
@@ -185,8 +182,8 @@ def decide(arms, candidate, objects_class='lifted', iou_class='chip'):
     gain = c[f1] - b[f1]
     need = max(MIN_GAIN, NOISE_FACTOR * max(c[f1 + '_spread'], b[f1 + '_spread']))
     iou_ok = c[io] >= b[io] - IOU_MARGIN
-    return {'best_semantic_arm': best, 'f1_gain': gain, 'required_gain': need, 'chip_iou_ok': bool(iou_ok),
-            'iou_ok': bool(iou_ok), 'go': bool(gain > need and iou_ok)}
+    return {'best_semantic_arm': best, 'f1_gain': gain, 'required_gain': need, 'iou_ok': bool(iou_ok),
+            'go': bool(gain > need and iou_ok)}
 
 # %% ../../nbs/17_eval.ipynb #ab499263
 def _load_run(run_dir):

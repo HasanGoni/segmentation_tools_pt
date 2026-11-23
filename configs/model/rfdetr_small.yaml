@@ -2,6 +2,7 @@
 # Compose: defaults: [model: rfdetr_small]  and set model.source=rfdetr (train.yaml's own model.source: smp wins over a
 # package default, so use configs/train_rfdetr_example.yaml or pass model.source=rfdetr on the command line).
 # Needs the optional extra:  uv sync --extra rfdetr --prerelease=allow   (separate environment recommended).
+family: rfdetr             # lets scripts/train.py catch `model=rfdetr_*` without `model.source=rfdetr`
 source: rfdetr
 arch: small                    # nano | small | medium
 architecture: rfdetr        # label only; get_model() is never called for RF-DETR
