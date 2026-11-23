@@ -7,13 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-11-23
 
-`segpt-eval` and `inference` load RF-DETR runs (#111, slice 3 of #108).
+Review fixes for #108-#111.
 
-- `nbs/18_rfdetr.ipynb`: `rfdetr_checkpoint`, `rfdetr_loader` (lazy `RFDETR.from_checkpoint`, install hint), `RFDETRPredictor` (`detections` once at a floor, `stack` per threshold via `detections_to_semantic(first_class_id=0, output='stack')`, `__call__` for one threshold), `load_rfdetr_predictor(run_dir)` and `RFDETR_THRESHOLDS = (0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7)`.
-- `nbs/17_eval.ipynb`: `score_rfdetr` (one prediction per patch, rows identical in shape to `score_dataset`); `sweep_run`/`evaluate_run`/`run_eval` dispatch on `model.source` and take `thresholds=None` = each run's own grid; the review report (`--report-dir`) works for RF-DETR runs. Sweep, held-out choice, fingerprint check and table are unchanged, so U-Net and RF-DETR runs share one table.
-- `segpt-eval --thresholds` now defaults to the per-model grids (was the U-Net grid); explicit values still apply to all runs.
-- Check: `segpt-eval confirm_106/resnet18_e15_s42 <rf_s1 as a segpt-style run> --heldout --report-dir ...` gives one table; the RF-DETR held-out F1 is 0.9394035982433773 with thresholds 0.1,0.2, identical to the second RF-DETR run in `2026-11-23-rfdetr-confirmation-heldout.json`.
-- Docs: `docs/TRAINING_CLI.md` 6b, skills `run-inference`, `model-comparison-ab-test`, `choose-model-architecture`, `tutorials/10_segpt_eval.ipynb`.
+- `eval.decide(arms, candidate, objects_class, iou_class)`: class names are required (no chip/lifted defaults); the verdict has one IoU key, `iou_ok` (`chip_iou_ok` is gone; `docs/superpowers/specs/data/2026-11-23-rfdetr-confirmation-heldout.json` is a #106 record and keeps its old key). `scripts/heldout_compare.py` gains `--classes/--objects-class/--iou-class` (#106 defaults). `eval.py` now has one `__all__`.
+- `rfdetr.check_rfdetr_selection`: `segpt-train configs/train.yaml model=rfdetr_small` now fails with "add `model.source=rfdetr`" instead of silently training a U-Net (`family: rfdetr` in `configs/model/rfdetr_*.yaml`); `resolve_rfdetr_cfg` reads `model.arch` only for `source: rfdetr`.
+- Docs: U-Net thresholds are strict (`prob > t`), RF-DETR inclusive (`confidence >= t`). `scripts/train.py` loads `best.pth` with `weights_only=True` for ONNX export.
 
 `segpt-eval`: evaluate and compare finished runs (#109, slice 1 of #108).
 
@@ -29,6 +27,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `train.epochs/batch_size/num_workers/device/seed` and `train.lr` (else `train.encoder_lr`) map onto RF-DETR; patch mode only.
 - New `configs/model/rfdetr_{nano,small,medium}.yaml`, `configs/train_rfdetr_example.yaml`, optional extra `rfdetr` in `pyproject.toml` (`uv sync --extra rfdetr --prerelease=allow`).
 - Docs: `docs/TRAINING_CLI.md` RF-DETR section rewritten; skill `choose-model-architecture` updated.
+
+`segpt-eval` and `inference` load RF-DETR runs (#111, slice 3 of #108).
+
+- `nbs/18_rfdetr.ipynb`: `rfdetr_checkpoint`, `rfdetr_loader` (lazy `RFDETR.from_checkpoint`, install hint), `RFDETRPredictor` (`detections` once at a floor, `stack` per threshold via `detections_to_semantic(first_class_id=0, output='stack')`, `__call__` for one threshold), `load_rfdetr_predictor(run_dir)` and `RFDETR_THRESHOLDS = (0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7)`.
+- `nbs/17_eval.ipynb`: `score_rfdetr` (one prediction per patch, rows identical in shape to `score_dataset`); `sweep_run`/`evaluate_run`/`run_eval` dispatch on `model.source` and take `thresholds=None` = each run's own grid; the review report (`--report-dir`) works for RF-DETR runs. Sweep, held-out choice, fingerprint check and table are unchanged, so U-Net and RF-DETR runs share one table.
+- `segpt-eval --thresholds` now defaults to the per-model grids (was the U-Net grid); explicit values still apply to all runs.
+- Check: `segpt-eval confirm_106/resnet18_e15_s42 <rf_s1 as a segpt-style run> --heldout --report-dir ...` gives one table; the RF-DETR held-out F1 is 0.9394035982433773 with thresholds 0.1,0.2, identical to the second RF-DETR run in `2026-11-23-rfdetr-confirmation-heldout.json`.
+- Docs: `docs/TRAINING_CLI.md` 6b, skills `run-inference`, `model-comparison-ab-test`, `choose-model-architecture`, `tutorials/10_segpt_eval.ipynb`.
 
 ---
 

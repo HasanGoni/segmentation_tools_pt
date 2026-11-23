@@ -470,6 +470,8 @@ segpt-train configs/train_rfdetr_example.yaml data.raw_dir=... data.patch_dir=..
 # or on top of any config:  segpt-train configs/train.yaml model=rfdetr_small model.source=rfdetr
 ```
 
+Selecting only the preset (`model=rfdetr_small`) is not enough: `configs/train.yaml` sets `model.source: smp` after the defaults, so `segpt-train` stops with an error asking for `model.source=rfdetr` instead of silently training a U-Net.
+
 `model.arch` is `nano`, `small` or `medium` (presets in `configs/model/rfdetr_*.yaml`). The patch cache (patch mode only) is
 converted once to `coco/` in the run directory (`write_coco_folder`, layout `auto`: label-map and per-class multilabel caches both work);
 `train.epochs`, `train.batch_size`, `train.num_workers`, `train.device`, `train.seed` and `train.lr` (else `train.encoder_lr`) are passed to RF-DETR.
@@ -559,7 +561,8 @@ segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout   # U-Net and RF-
 
   Run `segpt-eval` for RF-DETR runs in the environment that has `rfdetr` (`uv sync --extra rfdetr --prerelease=allow`); it also needs `hydra`/`smp` for the data side. Without `--thresholds` every run uses **its own grid**: U-Net probabilities `0.05 ... 0.9999` (13 points), RF-DETR scores `0.01 0.03 0.05 0.1 0.2 0.3 0.5 0.7` (RF-DETR scores are not calibrated probabilities; in #106 the best held-out threshold was 0.1 to 0.3). `--thresholds a b c` overrides the grid for every run; the held-out choice is always per run. The patch size of the cache must equal `train.crop_size` (RF-DETR sees the raw patch).
   In Python: `rfdetr.load_rfdetr_predictor(run_dir)` returns an `RFDETRPredictor`; `predictor(image, threshold=0.5)` is a `(K, H, W)` score map (`> 0` is the prediction) and `predictor.detections(image, floor)` + `predictor.stack(dets, shape, t)` is the predict-once, cut-many form. The review report (`--report-dir`) works for RF-DETR runs the same way.
-- **Python.** `from segmentation_tools_pt.eval import run_eval, evaluate_run, compare_runs, held_out, decide`. The go/no-go rule used for #106 is `decide`. Walkthrough: `tutorials/10_segpt_eval.ipynb`.
+- **Threshold convention.** U-Net thresholds are strict (a pixel is foreground when `prob > t`); RF-DETR thresholds are inclusive (a detection is kept when `confidence >= t`). A shared grid point such as 0.5 is therefore not exactly comparable between the two families, so compare held-out choices rather than one fixed threshold.
+- **Python.** `from segmentation_tools_pt.eval import run_eval, evaluate_run, compare_runs, held_out, decide`. The go/no-go rule used for #106 is `decide(arms, candidate, objects_class, iou_class)`; both class names are required (no built-in defaults) and the verdict has one IoU key, `iou_ok`. `scripts/heldout_compare.py` takes them as `--objects-class` / `--iou-class` (defaults `lifted` / `chip`, the #106 data). Walkthrough: `tutorials/10_segpt_eval.ipynb`.
 
 ---
 
