@@ -88,11 +88,14 @@ Unknown **non-`tu-*`** names hard-error.
 - For Chip/Void/Lifted recipes: default package `dinov3_vit_small`; throughput alt `convnext_tiny`;
   shut-off `mobilenet_v2`.
 
-## Instance models (RF-DETR segmentation): outside the library
+## Instance models (RF-DETR segmentation): `model.source=rfdetr`
 
-Not a `model.source`. RF-DETR returns objects (box, class, score, mask), not a per-pixel map, and
-trains in its own Lightning loop, so it never goes through `get_model()` / `train()`. If a user asks
-for it: train it in a separate virtualenv and use the bridge. Do not add `rfdetr` to `pyproject.toml`.
+RF-DETR returns objects (box, class, score, mask), not a per-pixel map, so it never goes through `get_model()` / `train()`.
+`segpt-train` dispatches it in `scripts/train.py` (`rfdetr.is_rfdetr_cfg` -> `rfdetr.train_rfdetr`). Config: `model.source=rfdetr model.arch={nano,small,medium}`
+(`configs/model/rfdetr_*.yaml`, annotated template `configs/train_rfdetr_example.yaml`); `train.epochs/batch_size/seed/num_workers/device` and `train.lr`
+(else `train.encoder_lr`) are mapped; patch mode only; U-Net keys are ignored. Run dir: `.hydra/config.yaml`, `coco/`, `checkpoints/{last_ema.pth,history.json}`.
+`rfdetr` is an optional extra needing pre-release packages: `uv sync --extra rfdetr --prerelease=allow`, in a separate environment (missing -> clear ImportError).
+Use it only after the decision rule below says an instance model is wanted. The bridge details:
 
 - Data: `masks.write_coco_folder(patch_dir, out_dir, class_names)` writes `train/` + `valid/` COCO
   folders (holes become RLE; `segmentation='polygon'` fills them; keep `epsilon=0` for 1-3 px defects).
@@ -112,4 +115,4 @@ for it: train it in a separate virtualenv and use the bridge. Do not add `rfdetr
 - `src/segmentation_tools_pt/hydra_pipeline.py` — `resolve_train_schedule` (returns `TrainSchedule`; neutralises freeze/LR for `custom_unet`).
 - Hydra packages: `configs/model/{mobilenet_v2,dinov3_vit_small,convnext_tiny,efficientnetv2_s}.yaml`.
 - Source notebook: `nbs/09_model.ipynb`; tutorial: `tutorials/08_custom_unet.ipynb`.
-- RF-DETR bridge: `masks.write_coco_folder`, `masks.mask_to_coco_instances`, `inference.detections_to_semantic` (`nbs/02_masks.ipynb`, `nbs/11_inference.ipynb`).
+- RF-DETR: `nbs/18_rfdetr.ipynb` (`rfdetr.train_rfdetr`, `is_rfdetr_cfg`); bridge: `masks.write_coco_folder`, `masks.mask_to_coco_instances`, `inference.detections_to_semantic` (`nbs/02_masks.ipynb`, `nbs/11_inference.ipynb`).
