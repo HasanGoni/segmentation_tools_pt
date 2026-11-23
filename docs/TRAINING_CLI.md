@@ -460,10 +460,27 @@ values. Try it without data: `make_dummy_samples(12, task='multilabel', dtype='u
 Click-to-comment feedback, gates and the summary text arrive with #51 / #52; evaluation and
 embedding work add their own sections to this same page (maps #28, #39, #48).
 
-### RF-DETR instance models (outside the library, issues #99 / #101)
+### RF-DETR instance models (`model.source=rfdetr`, issues #99 / #101 / #110)
 
-RF-DETR segmentation is an instance model, so it is trained outside `segpt-train` and the
-library never imports `rfdetr`. Two bridge functions connect it to our data and metrics:
+RF-DETR segmentation is an instance model, so it is dispatched in the `segpt-train` CLI layer (`scripts/train.py`),
+not in `get_model()`. The same command that trains a U-Net trains it:
+
+```bash
+segpt-train configs/train_rfdetr_example.yaml data.raw_dir=... data.patch_dir=... model.arch=small train.epochs=15
+# or on top of any config:  segpt-train configs/train.yaml model=rfdetr_small model.source=rfdetr
+```
+
+`model.arch` is `nano`, `small` or `medium` (presets in `configs/model/rfdetr_*.yaml`). The patch cache (patch mode only) is
+converted once to `coco/` in the run directory (`write_coco_folder`, layout `auto`: label-map and per-class multilabel caches both work);
+`train.epochs`, `train.batch_size`, `train.num_workers`, `train.device`, `train.seed` and `train.lr` (else `train.encoder_lr`) are passed to RF-DETR.
+U-Net-only keys (loss, augment, metrics, freeze, monitoring, export) are ignored. The run directory holds `.hydra/config.yaml`,
+`checkpoints/last_ema.pth` (evaluate this one) and `checkpoints/history.json`.
+
+`rfdetr` is an optional extra and is imported only when RF-DETR training starts. It needs pre-release packages, so install it in a
+separate environment: `uv sync --extra rfdetr --prerelease=allow` (or `uv pip install --prerelease=allow 'rfdetr[train]'`).
+Without it, `segpt-train` stops with that install message. Not supported yet: resume, ONNX export through `export_onnx`.
+
+The bridge functions that connect it to our data and metrics:
 
 ```python
 from segmentation_tools_pt.masks import write_coco_folder

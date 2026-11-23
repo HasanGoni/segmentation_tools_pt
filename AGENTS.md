@@ -67,7 +67,7 @@ segmentation_tools_pt/
 Notebook → module mapping: `00_core`, `01_channels`, `02_masks`, `03_patches`,
 `04_dataset_build`, `05_transforms`, `06_dataset`, `07_losses`, `08_metrics`, `09_model`,
 `10_train`, `11_inference`, `12_visualize`, `13_export`, `14_cli`, `15_hydra_pipeline`,
-`16_review_report`, `17_eval` —
+`16_review_report`, `17_eval`, `18_rfdetr` —
 each notebook generates the correspondingly named module in `src/`.
 
 ---
@@ -92,6 +92,7 @@ each notebook generates the correspondingly named module in `src/`.
 | `cli.py` | `segpt-build` / `segpt-train` / `segpt-submit` / `segpt-eval` entry points |
 | `hydra_pipeline.py` | shared Hydra resolvers (batch augs, mask, inference, class-morph configs) |
 | `eval.py` | evaluate/compare finished runs: per-patch IoU + object counts, threshold sweep, held-out threshold choice, arms + `decide` rule, comparison table (`run_eval`) |
+| `rfdetr.py` | `model.source=rfdetr` dispatch from `scripts/train.py`: patch cache -> COCO folder -> `RFDETRSeg*` (optional extra, lazy import) |
 | `review_report.py` | single self-contained HTML review report (overlay section, `Sample`, section registry); other maps add sections, not renderers |
 
 **Gotchas and per-module detail** (dataset dict-return, `channel_names` mismatch, patch-cache

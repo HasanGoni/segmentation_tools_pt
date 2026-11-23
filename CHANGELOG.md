@@ -15,6 +15,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Check: `run_eval(..., heldout=True)` on `outputs/confirm_106/{resnet18,convnext_tiny}_e15_s{42,43}` reproduces the two U-Net arms of `docs/superpowers/specs/data/2026-11-23-rfdetr-confirmation-heldout.json` exactly (max abs difference 0.0 over all arm means and spreads).
 - Docs: `docs/TRAINING_CLI.md` section 6b, `AGENTS.md` tables, skill `model-comparison-ab-test`, `tutorials/10_segpt_eval.ipynb`.
 
+`segpt-train` trains RF-DETR segmentation (#110, slice 2 of #108). Config grammar unchanged: `model.source=rfdetr model.arch={nano,small,medium}`.
+
+- New `nbs/18_rfdetr.ipynb` -> `rfdetr.py`: `is_rfdetr_cfg`, `resolve_rfdetr_cfg`, `prepare_coco` (patch cache -> COCO folder via `write_coco_folder`, reused when class names match), `rfdetr_trainer` (the only `import rfdetr`, lazy, `ImportError` with the `--prerelease=allow` install hint), `train_rfdetr` (injectable trainer factory; writes `checkpoints/last_ema.pth` + `history.json`). `scripts/train.py` dispatches before `get_model_from_cfg`; `get_model()` is untouched.
+- `train.epochs/batch_size/num_workers/device/seed` and `train.lr` (else `train.encoder_lr`) map onto RF-DETR; patch mode only.
+- New `configs/model/rfdetr_{nano,small,medium}.yaml`, `configs/train_rfdetr_example.yaml`, optional extra `rfdetr` in `pyproject.toml` (`uv sync --extra rfdetr --prerelease=allow`).
+- Docs: `docs/TRAINING_CLI.md` RF-DETR section rewritten; skill `choose-model-architecture` updated.
+
 ---
 
 ## 2026-11-22
