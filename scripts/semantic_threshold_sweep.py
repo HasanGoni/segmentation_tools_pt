@@ -20,9 +20,7 @@ from segmentation_tools_pt.hydra_pipeline import resolve_channel_preset, resolve
 from segmentation_tools_pt.model import get_model_from_cfg
 from segmentation_tools_pt.transforms import get_val_transforms
 
-from _bench_common import add_objects, ids_sha1, iou, new_tally, summarise
-
-CHIP, LIFTED = 0, 1
+from _bench_common import aggregate, ids_sha1, patch_scores
 
 
 @torch.no_grad()
@@ -39,7 +37,7 @@ def sweep(run_dir, thresholds, report_ids=None, report_threshold=0.5, device='cu
     model.load_state_dict(torch.load(Path(run_dir) / 'checkpoints' / 'best.pth', map_location='cpu', weights_only=True)['model_state'])
     model.to(device).eval()
     keep = {}
-    acc = {t: dict(iou=[[], []], tally=[new_tally(), new_tally()]) for t in thresholds}
+    rows = {t: {} for t in thresholds}
     for b in DataLoader(ds, batch_size=16):
         prob = torch.sigmoid(model(b['image'].to(device))).cpu()
         gt = b['mask'].bool()
@@ -49,32 +47,31 @@ def sweep(run_dir, thresholds, report_ids=None, report_threshold=0.5, device='cu
                     keep[sid] = (cv2.imread(str(Path(root) / 'val' / 'images' / f'{sid}.png'), cv2.IMREAD_UNCHANGED),
                                  gt[k].numpy(), (prob[k] > report_threshold).numpy())
         for t in thresholds:
-            pred = prob > t
-            for k in range(len(pred)):
-                for c in (CHIP, LIFTED):
-                    acc[t]['iou'][c].append(iou(pred[k, c].numpy(), gt[k, c].numpy()))
-                    add_objects(acc[t]['tally'][c], pred[k, c].numpy(), gt[k, c].numpy())
-    out = {str(t): summarise(r['iou'], r['tally']) for t, r in acc.items()}
-    return out, keep, ids_sha1(ds.sample_ids)
+            pred = (prob > t).numpy()
+            for k, sid in enumerate(b['sample_id']):
+                rows[t][sid] = patch_scores(pred[k], gt[k].numpy())
+    out = {str(t): aggregate(r.values()) for t, r in rows.items()}
+    return out, keep, ids_sha1(ds.sample_ids), {str(t): r for t, r in rows.items()}
 
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('run_dir')
     p.add_argument('--out', required=True)
-    p.add_argument('--thresholds', type=float, nargs='+', default=[0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9])
+    p.add_argument('--thresholds', type=float, nargs='+', default=[0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99, 0.995, 0.999, 0.9995, 0.9999])
     p.add_argument('--ids', default=None, help='sample_ids.json written by rfdetr_benchmark.py eval --report: also build a review report on those patches')
     p.add_argument('--report-dir', default=None)
     p.add_argument('--report-id', default='semantic-baseline')
     p.add_argument('--report-threshold', type=float, default=0.5)
     a = p.parse_args()
     ids = set(json.loads(Path(a.ids).read_text())) if a.ids else None
-    res, keep, val_sha1 = sweep(a.run_dir, a.thresholds, ids, a.report_threshold)
+    res, keep, val_sha1, per_patch = sweep(a.run_dir, a.thresholds, ids, a.report_threshold)
     if ids is not None:
         assert len(keep) == len(ids), f'{len(ids) - len(keep)} of the {len(ids)} --ids are not in this run\'s val split'
         from segmentation_tools_pt.review_report import Sample, build_report
         samples = [Sample(s, keep[s][0], keep[s][1].astype(np.uint8), keep[s][2].astype(np.uint8), class_names=['chip', 'lifted'])
                    for s in json.loads(Path(a.ids).read_text()) if s in keep]
         print('report:', build_report(a.report_id, a.report_dir, samples), f'({len(samples)} of {len(ids)} samples)')
+    Path(a.out).with_name(Path(a.out).stem + '_per_patch.json').write_text(json.dumps(per_patch))
     Path(a.out).write_text(json.dumps({'run_dir': a.run_dir, 'val_ids_sha1': val_sha1, 'thresholds': res}, indent=1))
     print(json.dumps(res, indent=1))

@@ -1,0 +1,239 @@
+{
+ "n_sources": [
+  105,
+  105
+ ],
+ "arms": {
+  "rfdetr": {
+   "n_runs": 3,
+   "f1_lifted": 0.936044862971999,
+   "f1_lifted_spread": 0.012388894188136046,
+   "lifted_recall": 0.9005847953216374,
+   "lifted_recall_spread": 0.01589262921186616,
+   "lifted_false_alarms": 6.166666666666667,
+   "lifted_false_alarms_spread": 2.494438257849294,
+   "iou_lifted": 0.9307538626675257,
+   "iou_lifted_spread": 0.009082149731775308,
+   "iou_chip": 0.9066969686433722,
+   "iou_chip_spread": 0.004876473489723127
+  },
+  "unet_r18_e15": {
+   "n_runs": 2,
+   "f1_lifted": 0.950315522922659,
+   "f1_lifted_spread": 0.0005613297474131307,
+   "lifted_recall": 0.9483590317856836,
+   "lifted_recall_spread": 0.0020242914979757276,
+   "lifted_false_alarms": 12.25,
+   "lifted_false_alarms_spread": 0.25,
+   "iou_lifted": 0.9340954829457145,
+   "iou_lifted_spread": 0.007982824798198451,
+   "iou_chip": 0.4142753621952535,
+   "iou_chip_spread": 0.2539603975361948
+  },
+  "unet_cnx_e15": {
+   "n_runs": 2,
+   "f1_lifted": 0.9684478279368456,
+   "f1_lifted_spread": 0.0021640883272445177,
+   "lifted_recall": 0.9591157722456715,
+   "lifted_recall_spread": 0.006708157464036524,
+   "lifted_false_alarms": 5.5,
+   "lifted_false_alarms_spread": 3.0,
+   "iou_lifted": 0.9579917135646125,
+   "iou_lifted_spread": 0.00468983728296668,
+   "iou_chip": 0.7770370637124151,
+   "iou_chip_spread": 0.09522500892460162
+  },
+  "unet_r18_e6": {
+   "n_runs": 2,
+   "f1_lifted": 0.8403442608180625,
+   "f1_lifted_spread": 0.01083422162463843,
+   "lifted_recall": 0.9221545065610015,
+   "lifted_recall_spread": 0.00594725356763437,
+   "lifted_false_alarms": 72.0,
+   "lifted_false_alarms_spread": 10.0,
+   "iou_lifted": 0.905277664568743,
+   "iou_lifted_spread": 0.002772618666242954,
+   "iou_chip": 0.8707109535943578,
+   "iou_chip_spread": 0.0005787343027030545
+  }
+ },
+ "runs": {
+  "rfdetr": [
+   {
+    "iou_chip": 0.9044474407597324,
+    "chip_total": 1343.0,
+    "chip_detected": 1277.5,
+    "chip_recall": 0.9512627809138354,
+    "chip_false_alarms": 42.5,
+    "iou_lifted": 0.9191652594412008,
+    "lifted_total": 264.5,
+    "lifted_detected": 233.0,
+    "lifted_recall": 0.8830217934361271,
+    "lifted_false_alarms": 9.5,
+    "f1_lifted": 0.9194736780583599,
+    "selection_f1": 0.9277739148504248,
+    "thresholds": [
+     0.2,
+     0.1
+    ]
+   },
+   {
+    "iou_chip": 0.9134675016886451,
+    "chip_total": 1343.0,
+    "chip_detected": 1288.5,
+    "chip_recall": 0.9597157134235097,
+    "chip_false_alarms": 48.0,
+    "iou_lifted": 0.9317516684688809,
+    "lifted_total": 264.5,
+    "lifted_detected": 237.5,
+    "lifted_recall": 0.8972205472765383,
+    "lifted_false_alarms": 3.5,
+    "f1_lifted": 0.9394035982433773,
+    "selection_f1": 0.9459225863720246,
+    "thresholds": [
+     0.1,
+     0.2
+    ]
+   },
+   {
+    "iou_chip": 0.9021759634817392,
+    "chip_total": 1343.0,
+    "chip_detected": 1254.0,
+    "chip_recall": 0.9341422364824086,
+    "chip_false_alarms": 12.0,
+    "iou_lifted": 0.9413446600924957,
+    "lifted_total": 264.5,
+    "lifted_detected": 243.5,
+    "lifted_recall": 0.9215120452522468,
+    "lifted_false_alarms": 5.5,
+    "f1_lifted": 0.9492573126142596,
+    "selection_f1": 0.9527720266850701,
+    "thresholds": [
+     0.2,
+     0.3
+    ]
+   }
+  ],
+  "unet_r18_e15": [
+   {
+    "iou_chip": 0.1603149646590587,
+    "chip_total": 1343.0,
+    "chip_detected": 211.0,
+    "chip_recall": 0.1574010588632087,
+    "chip_false_alarms": 2.5,
+    "iou_lifted": 0.9261126581475161,
+    "lifted_total": 264.5,
+    "lifted_detected": 250.5,
+    "lifted_recall": 0.9463347402877078,
+    "lifted_false_alarms": 12.0,
+    "f1_lifted": 0.9497541931752458,
+    "selection_f1": 0.9497541931752458,
+    "thresholds": [
+     0.9999,
+     0.9999
+    ]
+   },
+   {
+    "iou_chip": 0.6682357597314483,
+    "chip_total": 1343.0,
+    "chip_detected": 990.0,
+    "chip_recall": 0.737840935314375,
+    "chip_false_alarms": 36.0,
+    "iou_lifted": 0.942078307743913,
+    "lifted_total": 264.5,
+    "lifted_detected": 251.5,
+    "lifted_recall": 0.9503833232836593,
+    "lifted_false_alarms": 12.5,
+    "f1_lifted": 0.950876852670072,
+    "selection_f1": 0.950876852670072,
+    "thresholds": [
+     0.9995,
+     0.9995
+    ]
+   }
+  ],
+  "unet_cnx_e15": [
+   {
+    "iou_chip": 0.6818120547878135,
+    "chip_total": 1343.0,
+    "chip_detected": 1035.0,
+    "chip_recall": 0.771073530194909,
+    "chip_false_alarms": 7.0,
+    "iou_lifted": 0.9533018762816459,
+    "lifted_total": 264.5,
+    "lifted_detected": 252.0,
+    "lifted_recall": 0.9524076147816349,
+    "lifted_false_alarms": 2.5,
+    "f1_lifted": 0.9706119162640902,
+    "selection_f1": 0.9706119162640902,
+    "thresholds": [
+     0.9999,
+     0.9999
+    ]
+   },
+   {
+    "iou_chip": 0.8722620726370167,
+    "chip_total": 1343.0,
+    "chip_detected": 1229.5,
+    "chip_recall": 0.9169129655270352,
+    "chip_false_alarms": 17.0,
+    "iou_lifted": 0.9626815508475792,
+    "lifted_total": 264.5,
+    "lifted_detected": 255.5,
+    "lifted_recall": 0.965823929709708,
+    "lifted_false_alarms": 8.5,
+    "f1_lifted": 0.9662837396096011,
+    "selection_f1": 0.9703720930232558,
+    "thresholds": [
+     0.99,
+     0.9999
+    ]
+   }
+  ],
+  "unet_r18_e6": [
+   {
+    "iou_chip": 0.8701322192916547,
+    "chip_total": 1343.0,
+    "chip_detected": 1252.5,
+    "chip_recall": 0.9328441749210068,
+    "chip_false_alarms": 307.5,
+    "iou_lifted": 0.9025050459025,
+    "lifted_total": 264.5,
+    "lifted_detected": 242.5,
+    "lifted_recall": 0.9162072529933671,
+    "lifted_false_alarms": 62.0,
+    "f1_lifted": 0.8511784824427009,
+    "selection_f1": 0.8511784824427009,
+    "thresholds": [
+     0.995,
+     0.995
+    ]
+   },
+   {
+    "iou_chip": 0.8712896878970608,
+    "chip_total": 1343.0,
+    "chip_detected": 1239.5,
+    "chip_recall": 0.9232451760925906,
+    "chip_false_alarms": 265.5,
+    "iou_lifted": 0.9080502832349859,
+    "lifted_total": 264.5,
+    "lifted_detected": 245.5,
+    "lifted_recall": 0.9281017601286359,
+    "lifted_false_alarms": 82.0,
+    "f1_lifted": 0.829510039193424,
+    "selection_f1": 0.829510039193424,
+    "thresholds": [
+     0.9,
+     0.9
+    ]
+   }
+  ]
+ },
+ "verdict": {
+  "best_semantic_arm": "unet_cnx_e15",
+  "f1_gain": -0.032402964964846626,
+  "required_gain": 0.024777788376272092,
+  "chip_iou_ok": true,
+  "go": false
+ }
+}
