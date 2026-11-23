@@ -37,6 +37,11 @@ dependencies = [
     "torchvision>=0.25.0",
 ]
 
+[project.optional-dependencies]
+# RF-DETR segmentation (`model.source=rfdetr`). Pulls pre-release packages: `uv sync --extra rfdetr --prerelease=allow`,
+# preferably in a separate environment from the U-Net one.
+rfdetr = ["rfdetr[train]"]
+
 [project.urls]
 Repository = "https://github.com/HasanGoni/segmentation_tools_pt"
 Documentation = "https://hasangoni.github.io/segmentation_tools_pt/"
@@ -45,6 +50,7 @@ Documentation = "https://hasangoni.github.io/segmentation_tools_pt/"
 segpt-build  = "segmentation_tools_pt.cli:segpt_build"
 segpt-train  = "segmentation_tools_pt.cli:segpt_train"
 segpt-submit = "segmentation_tools_pt.cli:segpt_submit"
+segpt-eval   = "segmentation_tools_pt.cli:segpt_eval"
 
 [project.entry-points.nbdev]
 segmentation_tools_pt = "segmentation_tools_pt._modidx:d"

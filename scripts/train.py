@@ -41,6 +41,7 @@ from segmentation_tools_pt.hydra_pipeline import (
     validate_patch_training_sizes,
 )
 from segmentation_tools_pt.model import get_model_from_cfg
+from segmentation_tools_pt.rfdetr import check_rfdetr_selection, is_rfdetr_cfg, train_rfdetr
 from segmentation_tools_pt.train import build_default_callbacks, train
 
 
@@ -66,7 +67,7 @@ def _export_best_model(
         cfg.train.device if torch.cuda.is_available() else 'cpu'
     )
     model = get_model_from_cfg(cfg, in_channels, crop_size=resolve_crop_size(cfg), pretrained=False)
-    ckpt = torch.load(best_path, map_location=device, weights_only=False)
+    ckpt = torch.load(best_path, map_location=device, weights_only=True)
     model.load_state_dict(ckpt['model_state'])
     model = model.to(device)
 
@@ -92,6 +93,7 @@ def _export_best_model(
 
 @hydra.main(config_path='../configs', config_name='train', version_base='1.3')
 def main(cfg: DictConfig) -> None:
+    check_rfdetr_selection(cfg)
     print('=' * 60)
     print('segmentation_tools_pt — Hydra training')
     print('=' * 60)
@@ -178,6 +180,13 @@ def main(cfg: DictConfig) -> None:
             'No model was created because data.build_only=true. '
             'Prefer segpt-build with configs/build.yaml for patch-only jobs.'
         )
+        return
+
+    if is_rfdetr_cfg(cfg):
+        if not patch_mode:
+            raise ValueError('model.source=rfdetr needs data.patch_mode=true (it trains from the patch cache as a COCO folder)')
+        summary = train_rfdetr(cfg, in_channels, data_root, mask_cfg['class_names'])
+        print(f'\nRF-DETR {summary["model"]} done in {summary["train_seconds"]}s. Checkpoint: {summary["checkpoint"]}')
         return
 
     weights_path = cfg.model.weights_path

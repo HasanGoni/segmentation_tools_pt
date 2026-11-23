@@ -1,36 +1,57 @@
 ---
 name: model-comparison-ab-test
-description: 'PLACEHOLDER skill — statistical comparison of two segmentation checkpoints (A/B test, paired bootstrap, McNemar) is NOT implemented in segmentation_tools_pt yet. Use when a user asks "is model A better than model B?", "statistical significance", "compare two checkpoints", or "A/B test segmentation". Explains approaches and where they would be added.'
-argument-hint: '[optional] two checkpoint paths'
+description: 'Compare finished segmentation runs on one scale with `segpt-eval` (U-Net and RF-DETR runs in one table; shared IoU + object metrics, threshold sweep, held-out threshold choice, seed arms, val-id fingerprint check). Use when a user asks "is model A better than model B?", "compare two runs/checkpoints", "which seed/encoder is better", "held-out threshold", or "A/B test segmentation". Paired bootstrap / McNemar significance tests are NOT implemented yet.'
+argument-hint: '[optional] two or more run directories'
 user-invocable: true
 disable-model-invocation: false
 ---
-# Model Comparison / A/B Testing — NOT IMPLEMENTED YET
+# Model Comparison / A/B Testing
 
-Declaring "model A is better than model B" requires more than a single metric difference. Proper
-statistical comparison is **not implemented** in `segmentation_tools_pt` today.
+Declaring "model A is better than model B" needs both models scored by **the same code on the same
+patches**, with a threshold that was not tuned on the numbers being reported, and with the seed noise
+in view. `segpt-eval` (module `segmentation_tools_pt.eval`, notebook `nbs/17_eval.ipynb`) does that.
 
-## Methods to add
+## Quick recipe
 
-| Method | Use case |
-|---|---|
-| Paired bootstrap | Confidence interval on metric difference over the validation set |
-| McNemar's test | Whether one model's errors are a strict subset of the other's |
-| Object-level sign test | Per-image detection-rate comparison |
+```bash
+# one row per run, threshold 0.5
+segpt-eval outputs/a_s42 outputs/b_s42
 
-## Where it would be added
+# seeds as arms, threshold chosen on one half of the source images and scored on the other
+segpt-eval outputs/a_s42 outputs/a_s43 outputs/b_s42 outputs/b_s43 --heldout --out eval_out
+```
 
-- New notebook: `nbs/22_model_comparison.ipynb` → `model_comparison.py`.
-- Functions: `bootstrap_metric_diff(preds_a, preds_b, gt, metric_fn, n_bootstrap=1000)`,
-  `mcnemar_test(errors_a, errors_b)`.
-- Output: p-value + confidence interval on metric difference.
+- A run = directory with `.hydra/config.yaml` + `checkpoints/best.pth`; patch mode only (`data.patch_mode: true`).
+- **RF-DETR runs** (`model.source: rfdetr`, `checkpoints/last_ema.pth`) are detected from the config and can be mixed with U-Net runs:
+  `segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout`. Run it in the environment that has `rfdetr`. Each run uses its own default
+  threshold grid (U-Net `0.05 ... 0.9999`, RF-DETR `0.01 ... 0.7`); `--thresholds` overrides it for all runs. The same fingerprint check applies,
+  and the held-out threshold is chosen per run, so each arm is scored at its own operating point.
+- Directories that differ only by a trailing `_s<seed>` are one **arm**: table shows mean `+-` spread.
+- `--heldout`: threshold picked on half A (best object F1 of `--objects-class`, default the last class), scored on half B, and vice versa; halves are split by `source_id` so neighbouring patches never leak.
+- The command **fails (exit 1)** if the runs' val-id fingerprints or class names differ. Do not work around it: it means the runs saw different patches (different patch cache or seed for `val_fraction`).
+- Outputs in `--out`: `<run>.json`, `<run>_per_patch.json`, `comparison.json`. `--report-dir DIR --ids ids.json` also builds a review report (see `build-review-report`).
 
-## What the user can do today
+## Reading the table
 
-- Run both models on the same validation set and compare IoU/Dice/detection_rate.
-- Use `object-level-metrics` to compare per-object failure counts.
+`F1_<class>` is object-level F1 = `2*detected / (2*detected + missed + false alarms)` on the objects class; IoU columns are
+per-class mean patch IoU. A gain smaller than the seed spread (`+-`) is noise: the #106 rule asks for a gain above
+`max(0.01, 2 * spread)` plus no loss on the first class's IoU (`segmentation_tools_pt.eval.decide`).
 
-## Status
+## Python
 
-**Not implemented yet.** This skill exists to set expectations and route the user, per the
-"placeholder if not in the library" convention.
+```python
+from segmentation_tools_pt.eval import evaluate_run, compare_runs, format_table
+res = [evaluate_run(r, heldout=True) for r in runs]
+print(format_table(compare_runs(res)))
+```
+
+Pure pieces (`held_out`, `arm_summary`, `decide`, `score_dataset`) take plain dicts/arrays and are
+testable without a run. Verifying a real comparison: `tutorials/10_segpt_eval.ipynb`.
+
+## Not implemented
+
+Paired bootstrap, McNemar's test and an object-level sign test (p-values / confidence intervals on
+the metric difference) are still missing; the seed spread plus `decide` is the noise guard today.
+Where they would go: a new function in `nbs/17_eval.ipynb` (`bootstrap_metric_diff`, `mcnemar_test`) over
+the `<run>_per_patch.json` rows.
+Related skills: `object-level-metrics`, `build-review-report`, `run-inference`.

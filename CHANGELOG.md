@@ -5,6 +5,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-11-23
+
+Review fixes for #108-#111.
+
+- `eval.decide(arms, candidate, objects_class, iou_class)`: class names are required (no chip/lifted defaults); the verdict has one IoU key, `iou_ok` (`chip_iou_ok` is gone; `docs/superpowers/specs/data/2026-11-23-rfdetr-confirmation-heldout.json` is a #106 record and keeps its old key). `scripts/heldout_compare.py` gains `--classes/--objects-class/--iou-class` (#106 defaults). `eval.py` now has one `__all__`.
+- `rfdetr.check_rfdetr_selection`: `segpt-train configs/train.yaml model=rfdetr_small` now fails with "add `model.source=rfdetr`" instead of silently training a U-Net (`family: rfdetr` in `configs/model/rfdetr_*.yaml`); `resolve_rfdetr_cfg` reads `model.arch` only for `source: rfdetr`.
+- Docs: U-Net thresholds are strict (`prob > t`), RF-DETR inclusive (`confidence >= t`). `scripts/train.py` loads `best.pth` with `weights_only=True` for ONNX export.
+
+`segpt-eval`: evaluate and compare finished runs (#109, slice 1 of #108).
+
+- New notebook/module `nbs/17_eval.ipynb` -> `segmentation_tools_pt.eval`: per-patch IoU and object counts for any class list, `score_dataset` (model run once, many thresholds), `sweep_run`/`evaluate_run` (rebuild a run from `.hydra/config.yaml` + `checkpoints/best.pth`), held-out threshold choice (`split_halves`, `held_out`: halves of the source images, both directions, ties to the higher threshold), seed arms (`arm_name`, `arm_summary`), the #106 go/no-go rule (`decide`; constants `MIN_GAIN`, `NOISE_FACTOR`, `IOU_MARGIN` unchanged), `compare_runs`/`format_table`, and `run_eval`. Classes come from the run config; object F1 and the held-out choice use `objects_class` (default: the last class, `lifted` for chip/lifted data).
+- New command `segpt-eval RUN [RUN...]` (`cli.segpt_eval`, plain argparse): `--thresholds`, `--threshold`, `--heldout`, `--objects-class`, `--out`, `--report-dir` + `--ids`, `--device`. Writes `<run>.json`, `<run>_per_patch.json`, `comparison.json` and prints one table. Exits 1 if the runs' val-id fingerprints (or class lists) differ.
+- `scripts/_bench_common.py`, `scripts/semantic_threshold_sweep.py`, `scripts/heldout_compare.py` are now thin wrappers over the library (`scripts/rfdetr_benchmark.py` still imports `_bench_common` unchanged); the `heldout_compare.py --selftest` became `#| test` cells in `17_eval`.
+- Check: `run_eval(..., heldout=True)` on `outputs/confirm_106/{resnet18,convnext_tiny}_e15_s{42,43}` reproduces the two U-Net arms of `docs/superpowers/specs/data/2026-11-23-rfdetr-confirmation-heldout.json` exactly (max abs difference 0.0 over all arm means and spreads).
+- Docs: `docs/TRAINING_CLI.md` section 6b, `AGENTS.md` tables, skill `model-comparison-ab-test`, `tutorials/10_segpt_eval.ipynb`.
+
+`segpt-train` trains RF-DETR segmentation (#110, slice 2 of #108). Config grammar unchanged: `model.source=rfdetr model.arch={nano,small,medium}`.
+
+- New `nbs/18_rfdetr.ipynb` -> `rfdetr.py`: `is_rfdetr_cfg`, `resolve_rfdetr_cfg`, `prepare_coco` (patch cache -> COCO folder via `write_coco_folder`, reused when class names match), `rfdetr_trainer` (the only `import rfdetr`, lazy, `ImportError` with the `--prerelease=allow` install hint), `train_rfdetr` (injectable trainer factory; writes `checkpoints/last_ema.pth` + `history.json`). `scripts/train.py` dispatches before `get_model_from_cfg`; `get_model()` is untouched.
+- `train.epochs/batch_size/num_workers/device/seed` and `train.lr` (else `train.encoder_lr`) map onto RF-DETR; patch mode only.
+- New `configs/model/rfdetr_{nano,small,medium}.yaml`, `configs/train_rfdetr_example.yaml`, optional extra `rfdetr` in `pyproject.toml` (`uv sync --extra rfdetr --prerelease=allow`).
+- Docs: `docs/TRAINING_CLI.md` RF-DETR section rewritten; skill `choose-model-architecture` updated.
+
+`segpt-eval` and `inference` load RF-DETR runs (#111, slice 3 of #108).
+
+- `nbs/18_rfdetr.ipynb`: `rfdetr_checkpoint`, `rfdetr_loader` (lazy `RFDETR.from_checkpoint`, install hint), `RFDETRPredictor` (`detections` once at a floor, `stack` per threshold via `detections_to_semantic(first_class_id=0, output='stack')`, `__call__` for one threshold), `load_rfdetr_predictor(run_dir)` and `RFDETR_THRESHOLDS = (0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7)`.
+- `nbs/17_eval.ipynb`: `score_rfdetr` (one prediction per patch, rows identical in shape to `score_dataset`); `sweep_run`/`evaluate_run`/`run_eval` dispatch on `model.source` and take `thresholds=None` = each run's own grid; the review report (`--report-dir`) works for RF-DETR runs. Sweep, held-out choice, fingerprint check and table are unchanged, so U-Net and RF-DETR runs share one table.
+- `segpt-eval --thresholds` now defaults to the per-model grids (was the U-Net grid); explicit values still apply to all runs.
+- Check: `segpt-eval confirm_106/resnet18_e15_s42 <rf_s1 as a segpt-style run> --heldout --report-dir ...` gives one table; the RF-DETR held-out F1 is 0.9394035982433773 with thresholds 0.1,0.2, identical to the second RF-DETR run in `2026-11-23-rfdetr-confirmation-heldout.json`.
+- Docs: `docs/TRAINING_CLI.md` 6b, skills `run-inference`, `model-comparison-ab-test`, `choose-model-architecture`, `tutorials/10_segpt_eval.ipynb`.
+
+---
+
 ## 2026-11-22
 
 RF-DETR bridge: instance-model data and output converters (#101, map #100, research #99). Nothing imports `rfdetr`; the functions take plain arrays and `pyproject.toml` is unchanged.
