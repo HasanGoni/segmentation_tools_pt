@@ -39,8 +39,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # RF-DETR segmentation (`model.source=rfdetr`). Pulls pre-release packages: `uv sync --extra rfdetr --prerelease=allow`,
-# preferably in a separate environment from the U-Net one.
-rfdetr = ["rfdetr[train]"]
+# preferably in a separate environment from the U-Net one. >=1.12: rfdetr 1.9.4 (what a plain `uv sync --extra rfdetr` picked) rejects
+# the 1-channel models segpt-train makes ("Invalid tensor image shape ... (3, 512, 512)").
+rfdetr = ["rfdetr[train]>=1.12"]
 
 [project.urls]
 Repository = "https://github.com/HasanGoni/segmentation_tools_pt"
