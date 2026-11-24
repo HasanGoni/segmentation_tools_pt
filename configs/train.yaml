@@ -9,6 +9,11 @@ defaults:
   - model: mobilenet_v2   # library default; switch with model=dinov3_vit_small|convnext_tiny|efficientnetv2_s
   - _self_
 
+hydra:
+  job:
+    chdir: true             # checkpoints/ and .hydra/ land in the Hydra run dir (outputs/DATE/TIME, or hydra.run.dir=PATH), not the
+                            # current directory. Use absolute data.raw_dir / data.patch_dir (they are relative to the run dir otherwise).
+
 data:
   build_only: false
 
