@@ -84,6 +84,7 @@ Skip `choose-*` softmax framing entirely and follow this instead:
 | HPC submission | `submit-to-hpc` | `hpc.*` |
 | Mask cleanup before build | `mask-preprocessing` | `data.fit_rects` (+ placeholders) |
 | Full-image prediction | `run-inference` | post-training |
+| Run the whole chain (build, train, eval, predict) after planning | `run-segmentation-pipeline` | commands + gotchas |
 | ONNX deployment | `export-onnx` | `export.*` (multilabel: also `task`/`class_names`/`thresholds`/`hierarchy_pairs` metadata) |
 | Overlapping classes (multilabel) | *(this skill's Multilabel branch — not a sub-skill)* | `train.task`, `data.mask_mode`, `data.class_names`, `train.hierarchy.*` |
 

@@ -18,7 +18,7 @@ from segmentation_tools_pt.inference import predict
 import torch
 
 model = get_model(architecture='unet', arch='mobilenet_v2', in_channels=3, num_classes=1)
-model.load_state_dict(torch.load('checkpoints/best.pth', map_location='cpu')['model'])
+model.load_state_dict(torch.load('checkpoints/best.pth', map_location='cpu', weights_only=True)['model_state'])
 model.eval()
 
 prob = predict(model, image, ...)          # activate=True (default) -> sigmoid/softmax probabilities
@@ -67,6 +67,7 @@ from segmentation_tools_pt.inference import predict_tiled
 
 knobs = resolve_inference_cfg(cfg)   # {'tile_size': 256, 'overlap': 32,
                                      #  'inference_batch_size': 8, 'prefetch_factor': None}
+knobs.pop("prefetch_factor")        # loader-driven consumers only; predict_tiled does not take it
 prob = predict_tiled(model, image, device, **knobs)   # (C, H, W) probabilities
 mask = (prob[0] >= 0.5).long()
 ```

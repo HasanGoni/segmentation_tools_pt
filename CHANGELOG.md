@@ -13,6 +13,8 @@ Tiled inference for RF-DETR runs.
 - `configs/train_rfdetr_example.yaml`: `hydra.job.chdir: true` (outputs land in the run dir, a 15-epoch run had written `checkpoints/` and `coco/` to the current directory) and a comment on the `++data.mask_mode` / `++data.class_names` overrides a multilabel cache needs. `docs/TRAINING_CLI.md` gains the full command.
 - `configs/train.yaml`, `train_example.yaml`, `train_multilabel_3head.yaml`: `hydra.job.chdir: true`, so `segpt-train` writes `checkpoints/` into the Hydra run dir as the docs said (before, it wrote to the current directory unless `hydra.job.chdir=true` was passed).
 - `pyproject.toml`: extra `rfdetr = ["rfdetr[train]>=1.12"]`. A fresh `uv sync --extra rfdetr --prerelease=allow` installed rfdetr 1.9.4, and `segpt-eval` on an RF-DETR run then failed with "Invalid tensor image shape ... (3, 512, 512)"; with 1.12.1 it scores the run. Installed `segpt-eval` on a fresh clone of `main` (`uv sync`) works for U-Net runs.
+- New skill `run-segmentation-pipeline`: given a data folder, the chain `segpt-build` -> `segpt-train` (U-Net or `model.source=rfdetr`) -> `segpt-eval --heldout` -> `predict_tiled` / `predict_tiled_rfdetr` -> ONNX / `segpt-submit`, with the config to copy, override syntax (`++`, absolute paths, `hydra.run.dir`) and the gotchas. Linked from `AGENTS.md`, `docs/TRAINING_CLI.md` and the project planner. Doc fixes found while verifying it: `run-inference` loaded `best.pth` with the key `model` (it is `model_state`), and both `run-inference` and `docs/TRAINING_CLI.md` passed `resolve_inference_cfg(cfg)` straight to `predict_tiled`, which raises on `prefetch_factor`.
+
 
 ## 2026-11-23
 
