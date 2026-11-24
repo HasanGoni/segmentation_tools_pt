@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-11-24
+
+Tiled inference for RF-DETR runs.
+
+- `rfdetr.predict_tiled_rfdetr` / `RFDETRTileModel`: `predict_tiled` works with RF-DETR runs. `tile_size` defaults to the run's `train.crop_size` and warns when it differs (real run: same-size tiles equal whole-patch prediction, half-size tiles fail on some patches).
+
 ## 2026-11-23
 
 Review fixes for #108-#111.
