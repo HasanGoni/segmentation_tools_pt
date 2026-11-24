@@ -64,7 +64,7 @@ That full run does this:
 1. Discover samples in `data.raw_dir`
 2. Build patch dataset into `data.patch_dir` (skipped if already built)
 3. Compute or load `stats.json` in the patch folder
-4. Train U-Net; checkpoints go to Hydra output dir (`outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/`)
+4. Train U-Net; checkpoints go to Hydra output dir (`outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/`) (`hydra.job.chdir: true` in `configs/train*.yaml`; use absolute `data.*` paths, and pass `hydra.job.chdir=false` to keep the old current-directory behaviour)
 5. Export `model.onnx` from `best.pth` if `export.onnx: true`
 
 ### Patch size versus crop size
