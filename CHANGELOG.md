@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Tiled inference for RF-DETR runs.
 
 - `rfdetr.predict_tiled_rfdetr` / `RFDETRTileModel`: `predict_tiled` works with RF-DETR runs. `tile_size` defaults to the run's `train.crop_size` and warns when it differs (real run: same-size tiles equal whole-patch prediction, half-size tiles fail on some patches).
+- `configs/train_rfdetr_example.yaml`: `hydra.job.chdir: true` (outputs land in the run dir, a 15-epoch run had written `checkpoints/` and `coco/` to the current directory) and a comment on the `++data.mask_mode` / `++data.class_names` overrides a multilabel cache needs. `docs/TRAINING_CLI.md` gains the full command.
 
 ## 2026-11-23
 

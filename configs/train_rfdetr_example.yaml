@@ -13,13 +13,20 @@ defaults:
   - model: rfdetr_small      # rfdetr_nano | rfdetr_small | rfdetr_medium  (or model.arch=nano|small|medium)
   - _self_
 
+hydra:
+  job:
+    chdir: true             # run in the Hydra run dir so checkpoints/ and coco/ land there, not in the current directory.
+                            # Needs absolute data.raw_dir / data.patch_dir. Pick the dir with hydra.run.dir=PATH.
+
 data:
   raw_dir: ???
   patch_dir: ???
   patch_mode: true          # required: RF-DETR trains from the patch cache
   data_mode: single         # RF-DETR runs on the channels of data_mode; the benchmark used 1 channel
   fit_rects: false
-  # Multilabel cache (classes may overlap): list the class names, one `masks/{id}_{name}.png` per class.
+  # Multilabel cache (classes may overlap): one `masks/{id}_{name}.png` per class. These keys are not in
+  # data_patch.yaml, so on the command line add them with `++`:
+  #   '++data.mask_mode=per_class_files' '++data.class_names=[chip,lifted]' train.num_classes=2
   # mask_mode: per_class_files
   # class_names: [chip, lifted]
 
