@@ -12,6 +12,7 @@ Tiled inference for RF-DETR runs.
 - `rfdetr.predict_tiled_rfdetr` / `RFDETRTileModel`: `predict_tiled` works with RF-DETR runs. `tile_size` defaults to the run's `train.crop_size` and warns when it differs (real run: same-size tiles equal whole-patch prediction, half-size tiles fail on some patches).
 - `configs/train_rfdetr_example.yaml`: `hydra.job.chdir: true` (outputs land in the run dir, a 15-epoch run had written `checkpoints/` and `coco/` to the current directory) and a comment on the `++data.mask_mode` / `++data.class_names` overrides a multilabel cache needs. `docs/TRAINING_CLI.md` gains the full command.
 - `configs/train.yaml`, `train_example.yaml`, `train_multilabel_3head.yaml`: `hydra.job.chdir: true`, so `segpt-train` writes `checkpoints/` into the Hydra run dir as the docs said (before, it wrote to the current directory unless `hydra.job.chdir=true` was passed).
+- `pyproject.toml`: extra `rfdetr = ["rfdetr[train]>=1.12"]`. A fresh `uv sync --extra rfdetr --prerelease=allow` installed rfdetr 1.9.4, and `segpt-eval` on an RF-DETR run then failed with "Invalid tensor image shape ... (3, 512, 512)"; with 1.12.1 it scores the run. Installed `segpt-eval` on a fresh clone of `main` (`uv sync`) works for U-Net runs.
 
 ## 2026-11-23
 
