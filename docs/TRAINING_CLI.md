@@ -470,6 +470,16 @@ segpt-train configs/train_rfdetr_example.yaml data.raw_dir=... data.patch_dir=..
 # or on top of any config:  segpt-train configs/train.yaml model=rfdetr_small model.source=rfdetr
 ```
 
+Multilabel cache with 512-px patches and a chosen run directory (the form used for the 15-epoch check; `++` adds keys the base config lacks):
+
+```bash
+segpt-train configs/train_rfdetr_example.yaml data.raw_dir=/abs/data data.patch_dir=/abs/patches \
+  ++data.mask_mode=per_class_files '++data.class_names=[chip,lifted]' train.num_classes=2 \
+  patch.patch_size=512 patch.stride=512 train.crop_size=512 hydra.run.dir=/abs/runs/rfdetr_small_s1
+```
+
+`configs/train_rfdetr_example.yaml` sets `hydra.job.chdir: true`, so `checkpoints/`, `coco/` and `.hydra/` land in the run directory. Without it Hydra keeps the current directory and the run writes `checkpoints/` and `coco/` there (a real run did, next to the repo root). Use absolute `data.*` paths with it.
+
 Selecting only the preset (`model=rfdetr_small`) is not enough: `configs/train.yaml` sets `model.source: smp` after the defaults, so `segpt-train` stops with an error asking for `model.source=rfdetr` instead of silently training a U-Net.
 
 `model.arch` is `nano`, `small` or `medium` (presets in `configs/model/rfdetr_*.yaml`). The patch cache (patch mode only) is
