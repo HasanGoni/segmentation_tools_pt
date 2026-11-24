@@ -90,6 +90,8 @@ score_map = pred(image_hw, threshold=0.2)                        # (K, H, W) flo
 dets = pred.detections(image_hw, 0.01); pred.stack(dets, image_hw.shape[:2], 0.3)   # predict once, cut at many thresholds
 ```
 
+Large images: `predict_tiled_rfdetr(pred, image_chw, 'cuda', threshold=0.2, **resolve_inference_cfg(cfg))` runs `predict_tiled` with RF-DETR (raw 0-255 pixels in, `(K, H, W)` scores out; `> 0` is the union over tiles). **Tile at the training patch size** (`train.crop_size`; the default when `tile_size` is left out). On a real run, tiles of the training size matched whole-patch prediction exactly (lifted IoU 0.985 vs 0.985), while tiles of half size dropped some patches from 0.98 to 0.0, so `inference.tile_size: 256` from `configs/train.yaml` is wrong for a 512-patch RF-DETR run and the function warns.
+
 `segpt-eval RUN... --report-dir DIR --ids ids.json` builds the review report for RF-DETR runs like for U-Net runs.
 RF-DETR scores are not probabilities (useful thresholds 0.1 to 0.3 in #106), so do not reuse the U-Net operating point.
 See `choose-model-architecture`, `model-comparison-ab-test` and `tutorials/09_rfdetr_bridge.ipynb`.

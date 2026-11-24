@@ -7,7 +7,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/rfdetr.html.md"""
 # %% auto #0
 __all__ = ['RFDETR_ARCHS', 'INSTALL_HINT', 'RFDETR_THRESHOLDS', 'is_rfdetr_cfg', 'check_rfdetr_selection', 'resolve_rfdetr_cfg',
            'prepare_coco', 'rfdetr_trainer', 'train_rfdetr', 'rfdetr_checkpoint', 'rfdetr_loader', 'RFDETRPredictor',
-           'load_rfdetr_predictor']
+           'load_rfdetr_predictor', 'RFDETRTileModel', 'predict_tiled_rfdetr']
 
 # %% ../../nbs/18_rfdetr.ipynb #db678a3a
 import json
@@ -143,8 +143,8 @@ class RFDETRPredictor:
 
     `model` needs `predict(image, threshold=...)` returning `supervision.Detections`-like objects.
     """
-    def __init__(self, model, num_classes: int):
-        self.model, self.num_classes = model, int(num_classes)
+    def __init__(self, model, num_classes: int, train_size: Optional[int] = None):
+        self.model, self.num_classes, self.train_size = model, int(num_classes), train_size   # train_size: patch side it was trained on
 
     def detections(self, image, threshold: float = 0.0):
         "RF-DETR detections of one image (an `(H, W[, C])` array or a PIL image) scoring at least `threshold`."
@@ -175,5 +175,51 @@ def load_rfdetr_predictor(run_dir, num_classes: Optional[int] = None, loader: Op
         cfg_path = Path(run_dir) / '.hydra' / 'config.yaml'
         names = OmegaConf.load(cfg_path).data.get('class_names', None) if cfg_path.exists() else None
         num_classes = len(names) if names else 1
-    return RFDETRPredictor((loader or rfdetr_loader)(ckpt), num_classes)
+    train_size = None
+    cfg_path = Path(run_dir) / '.hydra' / 'config.yaml'
+    if cfg_path.exists():
+        from omegaconf import OmegaConf
+        train_size = OmegaConf.load(cfg_path).get('train', {}).get('crop_size', None)
+    return RFDETRPredictor((loader or rfdetr_loader)(ckpt), num_classes, train_size)
+
+
+# %% ../../nbs/18_rfdetr.ipynb #90912ffd
+class RFDETRTileModel:
+    """Adapts an `RFDETRPredictor` to the model interface `predict_tiled` expects (`eval()` and `(B, C, H, W)` in, `(B, K, H, W)` out).
+
+    Tiles hold raw pixel values (0-255 scale, as in the patch cache). Scores are RF-DETR confidences at least `threshold`, 0 elsewhere.
+    Blending averages overlapping tiles, so `> 0` after `predict_tiled` is the union over tiles; cut higher to ask tiles to agree.
+    """
+    def __init__(self, predictor: 'RFDETRPredictor', threshold: float = 0.2):
+        self.predictor, self.threshold = predictor, float(threshold)
+
+    def eval(self):
+        return self
+
+    def __call__(self, tiles):
+        import torch
+        out = []
+        for t in tiles.detach().cpu().numpy():
+            img = np.clip(np.rint(t[0] if t.shape[0] == 1 else t.transpose(1, 2, 0)), 0, 255).astype(np.uint8)
+            out.append(self.predictor(img, self.threshold))
+        return torch.from_numpy(np.stack(out)).to(tiles.device)
+
+
+def predict_tiled_rfdetr(predictor: 'RFDETRPredictor', image, device='cpu', threshold: float = 0.2, **knobs):
+    """`(K, H, W)` RF-DETR score map of a large `(C, H, W)` image (tensor or array): `predict_tiled` with `RFDETRTileModel`.
+
+    `knobs` are the `inference.*` settings (`resolve_inference_cfg(cfg)`): `tile_size`, `overlap`, `inference_batch_size`.
+    `tile_size` defaults to the training patch size and warns when it differs (RF-DETR does not transfer across scales).
+    """
+    import torch
+    from segmentation_tools_pt.inference import predict_tiled
+    import warnings
+    knobs = {k: v for k, v in knobs.items() if k != 'prefetch_factor'}
+    if predictor.train_size and knobs.get('tile_size', predictor.train_size) != predictor.train_size:
+        warnings.warn(f"tile_size={knobs['tile_size']} differs from the training patch size {predictor.train_size}; RF-DETR "
+                      "scores drop sharply on other scales (lifted IoU 0.98 -> 0.0 on some patches at half size in #113). "
+                      "Set inference.tile_size to the training size.", stacklevel=2)
+    knobs.setdefault('tile_size', predictor.train_size or 256)
+    return predict_tiled(RFDETRTileModel(predictor, threshold), torch.as_tensor(np.asarray(image), dtype=torch.float32),
+                         torch.device(device), activate=False, **knobs)
 
