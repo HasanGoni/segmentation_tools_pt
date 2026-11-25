@@ -25,8 +25,8 @@ data folder -> segpt-build -> segpt-train -> segpt-eval -> segpt-predict -> (exp
 | Mask naming | `data.mask_suffix` ("" when mask has the image stem) | compare one image and one mask name |
 | Channels | `data.data_mode`: `single`, `single_to_3`, `two_channel`, `three_channel`; `model.in_channels` must match | `choose-channels` skill |
 | Classes | binary, multi-class (exclusive) or **multilabel** (can overlap) | ask; overlap means multilabel |
-| Class names | multilabel needs `data.class_names` and one `masks/<id>_<class>.png` per class | `ls RAW/masks` |
-| Image size | patch size: 256 for small images, 512 when defects/context are large; `train.crop_size` <= `patch.patch_size` | `choose-tiling-strategy` skill |
+| Class names | `data.class_names` is needed by `segpt-eval` and `segpt-predict` in **every** run (single class: `+data.class_names=[defect]`); multilabel also needs one `masks/<id>_<class>.png` per class | `ls RAW/masks` |
+| Image size | `patch.patch_size` must be <= the image side (images of 128 px: patch 128); 256 for small images, 512 when defects/context are large; `train.crop_size` <= `patch.patch_size`, and set `patch.stride` = patch size for little data | `choose-tiling-strategy` skill |
 | Compute | local GPU, or LSF HPC (queue, GPU memory, `hpc.repo_dir`) | ask |
 
 ## 2. Pick the config to copy (config-file-first)
@@ -38,12 +38,19 @@ data folder -> segpt-build -> segpt-train -> segpt-eval -> segpt-predict -> (exp
 | RF-DETR instance model | `configs/train_rfdetr_example.yaml` | `model.source: rfdetr`; presets `model=rfdetr_nano|small|medium` |
 
 ```bash
-mkdir -p /abs/proj && cp configs/build_example.yaml /abs/proj/build.yaml && cp configs/train_example.yaml /abs/proj/train.yaml
+mkdir -p /abs/proj && cp -r configs /abs/proj/configs     # copy the whole folder: train_example.yaml includes data_patch.yaml and model/<name>.yaml
 ```
+
+Edit `/abs/proj/configs/train_example.yaml` or leave it alone and put changes in overrides. Copying only the one YAML fails with "Could not find 'model/...'".
+Fastest start when the user wants everything run: write a `segpt-run` file (section 7) that points `config:` at `/abs/proj/configs/train_example.yaml` and puts the overrides below in `overrides:`.
 
 Rules for every command below:
 - Absolute `data.raw_dir` and `data.patch_dir`. The train configs set `hydra.job.chdir: true`, so relative paths resolve from the run dir.
 - `hydra.run.dir=/abs/runs/NAME` chooses the run directory (`.hydra/`, `checkpoints/`, `train.log`). Without it: `outputs/DATE/TIME`.
+- No internet or no local weights file: the encoder presets (`configs/model/*.yaml`) carry a placeholder `weights_path: /path/to/models/....pth` and training fails with FileNotFoundError. Add `model.pretrained=false model.weights_path=null` (random-init encoder: fine for a first run, weaker than ImageNet weights) or download weights first (`docs/TRAINING_CLI.md` section 8).
+- `configs/train_example.yaml` sets `export.onnx: true`; without the optional `onnx` package training crashes **after** the last epoch. Add `export.onnx=false` unless the user wants an ONNX file and `onnx` is installed (`configs/train.yaml` already defaults to false).
+- Small data: `train.batch_size` must be <= the number of train patches (count them: `ls PATCHES/train/images | wc -l`; with the default 16 and 13 patches training crashes with `ZeroDivisionError` in `train_one_epoch`, because the loader drops the last partial batch and gets zero batches). Use `train.batch_size=4` for ~15 images. With only a few val patches the validation IoU jumps between epochs and the eval table rests on a handful of objects: it shows the chain works, not that the model is good.
+- CPU-only run (no GPU, or a busy one): `train.device=cpu train.use_amp=false train.num_workers=0 train.freeze_epochs=0`, plus `CUDA_VISIBLE_DEVICES=` in the shell. Keep `train.epochs` small and expect a weak model; this proves the chain, it does not give a usable model.
 - A key that is **not in the base config** needs `++` (`++data.mask_mode=per_class_files`); a plain override fails with "Could not override". Keys that exist take no prefix.
 - `segpt-train configs/x.yaml key=value ...` takes the same overrides as the YAML. `--help` prints the config.
 
@@ -57,12 +64,14 @@ Reuses an existing cache; add `data.force_rebuild=true` after changing patch set
 
 ## 4. Train
 
-U-Net, binary:
+U-Net, binary (a one-class run still needs `+data.class_names=[...]`, or `segpt-eval` crashes with `TypeError: 'NoneType' object is not iterable` after training):
 
 ```bash
 segpt-train /abs/proj/train.yaml data.raw_dir=/abs/RAW data.patch_dir=/abs/PATCHES model=convnext_tiny \
-  train.epochs=15 hydra.run.dir=/abs/runs/convnext_s42 train.seed=42
+  '+data.class_names=[defect]' train.epochs=15 hydra.run.dir=/abs/runs/convnext_s42 train.seed=42
 ```
+
+First run with no preference: keep the config's default encoder (`mobilenet_v2`, small and fast) and compare with `model=convnext_tiny` later via `segpt-eval`.
 
 U-Net, multilabel (start from the 3-head preset; two classes shown):
 
@@ -96,6 +105,8 @@ segpt-eval /abs/runs/convnext_s42 /abs/runs/rfdetr_small_s1 --heldout --objects-
 segpt-eval /abs/runs/a_s42 /abs/runs/a_s43 /abs/runs/b_s42 /abs/runs/b_s43 --heldout   # seeds s<N> become one arm, mean +- spread
 segpt-eval RUN --thresholds 0.3 0.5 0.9 --threshold 0.5            # one run, chosen thresholds; add --report-dir DIR for the review report
 ```
+
+Read the table before trusting it: `n` is the number of runs (seeds) in the arm, and with only a handful of val source images `--heldout` has almost nothing to hold out (use at least ~10 source images). F1 1.000 with recall 0.000, or a chosen threshold at the end of the grid (0.9999), means no object was predicted or counted, not that the model is perfect: check `<out>/<run>.json` for `defect_total` (0 means the evaluation saw no ground-truth objects; versions before the binary-mask fix did this for every one-class run) and run `segpt-predict` on a val image, then train longer or add data before comparing arms.
 
 Rules: runs must share the **same val ids** (same cache and split) or the command fails; `--heldout` picks the threshold on one half of the source images and scores the other half, so a threshold is never tuned on the data it is scored on. U-Net thresholds are probabilities (strict `>`), RF-DETR thresholds are scores (inclusive `>=`, useful range 0.1 to 0.3); do not copy one model's threshold to the other. If a U-Net arm selects 0.9999 (the grid end), its chip IoU is not comparable; report it as grid-limited. After `git pull`, rerun `uv sync` so the `segpt-eval` entry point exists.
 
@@ -143,7 +154,7 @@ segpt-run /abs/run.yaml               # same command again after a failure resum
 segpt-run /abs/run.yaml --force eval  # redo evaluation after changing eval.args
 ```
 
-Add `+data.class_names=[...]` to `overrides` for a single-class run: `segpt-eval` needs it.
+Put `+data.class_names=[...]` and, offline, `model.pretrained=false model.weights_path=null` in `overrides` (see section 4 rules). `--dry-run` only prints commands: it does not catch a missing config include or a placeholder weights path.
 
 ## 8. Optional
 
