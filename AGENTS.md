@@ -131,6 +131,9 @@ every block lives in `docs/agents/repo-guide.md`, and daily driving is covered b
 | `segpt-train` | Hydra-driven end-to-end training (`configs/train.yaml`) |
 | `segpt-eval` | Scores finished runs (`RUN...`, patch mode) with shared IoU/object code, threshold sweep (`--heldout` = threshold chosen on one half of the source images), one comparison table; fails if val ids differ |
 | `segpt-submit` | Submits a build/training job to LSF HPC via `bsub`; reads `hpc:` from config; `--dry-run` to verify |
+| `segpt-sweep` | Scores one finished semantic run at several probability thresholds (wraps `scripts/semantic_threshold_sweep.py`) |
+| `segpt-heldout` | Held-out threshold choice and decision rule over sweep outputs (wraps `scripts/heldout_compare.py`; `segpt-eval --heldout` is the general form) |
+| `segpt-rfdetr-benchmark` | The #102 RF-DETR train/eval benchmark (wraps `scripts/rfdetr_benchmark.py`; `segpt-train model.source=rfdetr` is the general form) |
 
 Examples:
 ```bash
