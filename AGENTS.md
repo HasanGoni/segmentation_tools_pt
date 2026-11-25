@@ -89,7 +89,7 @@ each notebook generates the correspondingly named module in `src/`.
 | `inference.py` | `predict` (sliding window), `predict_tiled` (batched tiles), decode/morph/hierarchy, threshold sweep |
 | `visualize.py` | overlay masks, top-loss grids, error posters |
 | `export.py` | ONNX export + verification, task/class_names metadata |
-| `cli.py` | `segpt-build` / `segpt-train` / `segpt-submit` / `segpt-eval` entry points |
+| `cli.py` | `segpt-build` / `segpt-train` / `segpt-submit` / `segpt-eval` / `segpt-predict` entry points |
 | `hydra_pipeline.py` | shared Hydra resolvers (batch augs, mask, inference, class-morph configs) |
 | `eval.py` | evaluate/compare finished runs: per-patch IoU + object counts, threshold sweep, held-out threshold choice, arms + `decide` rule, comparison table (`run_eval`) |
 | `rfdetr.py` | `model.source=rfdetr` dispatch from `scripts/train.py`: patch cache -> COCO folder -> `RFDETRSeg*` (optional extra, lazy import) |
@@ -131,6 +131,7 @@ every block lives in `docs/agents/repo-guide.md`, and daily driving is covered b
 | `segpt-train` | Hydra-driven end-to-end training (`configs/train.yaml`) |
 | `segpt-eval` | Scores finished runs (`RUN...`, patch mode) with shared IoU/object code, threshold sweep (`--heldout` = threshold chosen on one half of the source images), one comparison table; fails if val ids differ |
 | `segpt-submit` | Submits a build/training job to LSF HPC via `bsub`; reads `hpc:` from config; `--dry-run` to verify |
+| `segpt-predict` | Predicts new images with a finished run (U-Net or RF-DETR) from its saved config; writes `masks/`, `overlays/`, `summary.json`; exits 1 naming the file on a missing checkpoint, channel mismatch or 16-bit image |
 | `segpt-sweep` | Scores one finished semantic run at several probability thresholds (wraps `scripts/semantic_threshold_sweep.py`) |
 | `segpt-heldout` | Held-out threshold choice and decision rule over sweep outputs (wraps `scripts/heldout_compare.py`; `segpt-eval --heldout` is the general form) |
 | `segpt-rfdetr-benchmark` | The #102 RF-DETR train/eval benchmark (wraps `scripts/rfdetr_benchmark.py`; `segpt-train model.source=rfdetr` is the general form) |

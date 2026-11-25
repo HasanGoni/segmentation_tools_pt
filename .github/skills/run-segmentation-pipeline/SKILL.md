@@ -12,7 +12,7 @@ chooses knobs (it stops at two configs); this skill runs the chain and tells you
 Every knob lives in a YAML config, so work from a copy of an existing config, not from new code.
 
 ```
-data folder -> segpt-build -> segpt-train -> segpt-eval -> predict / predict_tiled -> (export-onnx | segpt-submit)
+data folder -> segpt-build -> segpt-train -> segpt-eval -> segpt-predict -> (export-onnx | segpt-submit)
               patch cache    checkpoints/   comparison     full-image masks
 ```
 
@@ -102,6 +102,15 @@ Decision guidance (issue #106 on the chip/lifted X-ray set): U-Net ConvNeXt-Tiny
 
 ## 6. Predict on new images
 
+One command for U-Net and RF-DETR runs (reads the run's config, tiles at the training crop size, writes masks, overlays and `summary.json`):
+
+```bash
+segpt-predict /abs/runs/convnext_s42 /abs/new_images --out /abs/predictions            # U-Net: p > 0.5 by default
+segpt-predict /abs/runs/rfdetr_small_s1 /abs/new_images --threshold 0.2                 # RF-DETR: score >= 0.2 by default
+```
+
+Thresholds are not interchangeable (probability vs detector confidence); take the one `segpt-eval --heldout` chose for that run. 8-bit images only. The Python below is for probabilities or custom post-processing.
+
 U-Net (verified on a real run): rebuild the model from the run's own config, load `best.pth`, normalise with the cache's `stats.json`, tile at the training size.
 
 ```python
@@ -115,7 +124,7 @@ cfg = OmegaConf.load('/abs/runs/convnext_s42/.hydra/config.yaml')
 model = get_model_from_cfg(cfg, in_channels=1, crop_size=int(cfg.train.crop_size))
 model.load_state_dict(torch.load('/abs/runs/convnext_s42/checkpoints/best.pth', map_location='cpu', weights_only=True)['model_state'])
 st = json.load(open(f'{cfg.data.patch_dir}/stats.json'))            # mean/std on the 0-1 scale
-knobs = resolve_inference_cfg(cfg); knobs.pop('prefetch_factor'); knobs['tile_size'] = int(cfg.train.crop_size)
+knobs = resolve_inference_cfg(cfg); knobs['tile_size'] = int(cfg.train.crop_size)
 prob = predict_tiled(model, (img01 - st['mean'][0]) / st['std'][0], torch.device('cuda'), task=cfg.train.get('task'), **knobs)  # (K,H,W)
 ```
 
@@ -135,7 +144,7 @@ RF-DETR: `load_rfdetr_predictor(run)` then `predict_tiled_rfdetr(pred, image_chw
 3. Multilabel needs all four keys in section 4; a single float `metrics.threshold` with K>1 heads crashes at the first metric update (tensor size mismatch).
 4. `segpt-eval` refuses runs with different val ids: build once, train every arm from the same `data.patch_dir` and `patch.*`.
 5. RF-DETR: rfdetr>=1.12, `model.source=rfdetr`, `last_ema.pth`, scores not probabilities, tile at the training size.
-6. `resolve_inference_cfg` also returns `prefetch_factor`; `predict_tiled` does not take it (pop it).
+6. `resolve_inference_cfg` also returns `prefetch_factor`; `predict_tiled` accepts and ignores it, pass the dict as is.
 7. `best.pth` holds the weights under `model_state` (load with `weights_only=True`).
 8. `train.crop_size` must not exceed `patch.patch_size`; for RF-DETR it is only checked against it.
 

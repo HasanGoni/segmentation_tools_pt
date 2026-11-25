@@ -54,6 +54,19 @@ masks = apply_hierarchy(masks, pairs=hierarchy_pairs)    # e.g. [(1, 0), (2, 0)]
 `class_name` must exist in `data.class_names` or `resolve_class_morph_cfg` raises a clear
 ValueError; other channels pass through `apply_class_morph` untouched.
 
+## The command: `segpt-predict` (start here for new images)
+
+```bash
+segpt-predict outputs/unet_s42 new_images/ --out predictions              # U-Net or RF-DETR run, same command
+segpt-predict outputs/unet_s42 a.png b.png --threshold 0.7 --device cpu
+```
+
+It reads the run's saved config (model family, crop size = tile size, class names, channel mode) and writes
+`predictions/masks/<id>.png` (several classes: `<id>_<class>.png`), `predictions/overlays/<id>.png` and `predictions/summary.json`.
+Default threshold: U-Net probability `0.5` (kept where `p > t`), RF-DETR confidence `0.2` (kept where `score >= t`; not a probability).
+Only 8-bit images; a 16-bit or wrong-channel image, a missing checkpoint or a missing `stats.json` exits 1 naming the file.
+Use the Python below only when you need probabilities or custom post-processing.
+
 ## Batched tile inference for very large images (`predict_tiled`, issue #20)
 
 `predict` runs one view at a time — for full inspection images use `predict_tiled`:
@@ -67,7 +80,6 @@ from segmentation_tools_pt.inference import predict_tiled
 
 knobs = resolve_inference_cfg(cfg)   # {'tile_size': 256, 'overlap': 32,
                                      #  'inference_batch_size': 8, 'prefetch_factor': None}
-knobs.pop("prefetch_factor")        # loader-driven consumers only; predict_tiled does not take it
 prob = predict_tiled(model, image, device, **knobs)   # (C, H, W) probabilities
 mask = (prob[0] >= 0.5).long()
 ```

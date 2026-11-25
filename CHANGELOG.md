@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-11-25
 
+`segpt-predict` (#122, slice A of #121).
+
+- New console script `segpt-predict RUN IMAGES...` (`cli.segpt_predict`, `cli.predict_run`): predicts new images with a finished U-Net or RF-DETR run from its saved config and writes `masks/`, `overlays/` and `summary.json`. Defaults: U-Net `p > 0.5`, RF-DETR `score >= 0.2`; tile size is the training crop size; 16-bit images, wrong channel counts and missing checkpoints exit 1 naming the file. Tested on a tiny synthetic run on CPU; the RF-DETR path with a stub model.
+- `inference.predict_tiled` accepts and ignores `prefetch_factor`, so `**resolve_inference_cfg(cfg)` can be passed as is; the `knobs.pop('prefetch_factor')` lines are gone from the skills and `docs/TRAINING_CLI.md`.
+- `run-segmentation-pipeline`, `run-inference`, `docs/TRAINING_CLI.md` (section 6a) and `AGENTS.md` point at the command.
+
+
 Every script with a command line is registered in `pyproject.toml`.
 
 - New console scripts `segpt-sweep`, `segpt-heldout`, `segpt-rfdetr-benchmark` (`cli.segpt_sweep`, `segpt_heldout`, `segpt_rfdetr_benchmark`): each runs its `scripts/*.py` from the repo root, with `scripts/` importable. They are the older forms of `segpt-eval` and `segpt-train model.source=rfdetr`.
