@@ -76,7 +76,7 @@ Multilabel checklist (all four, or it fails or silently trains the wrong thing):
 RF-DETR (instance model, separate environment recommended):
 
 ```bash
-uv sync --extra rfdetr --prerelease=allow          # needs rfdetr>=1.12; 1.9.4 fails on 1-channel input
+uv sync --extra rfdetr                             # needs rfdetr>=1.12; 1.9.4 fails on 1-channel input
 segpt-train configs/train_rfdetr_example.yaml data.raw_dir=/abs/RAW data.patch_dir=/abs/PATCHES \
   ++data.mask_mode=per_class_files '++data.class_names=[chip,lifted]' train.num_classes=2 \
   patch.patch_size=512 patch.stride=512 train.crop_size=512 train.epochs=15 train.batch_size=8 \

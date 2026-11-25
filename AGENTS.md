@@ -53,7 +53,7 @@ Implementation contract: `docs/agents/nbdev-implementation-contract.md`.
 segmentation_tools_pt/
 ├── nbs/          ← SOURCE OF TRUTH (edit here); 00_core … 18_rfdetr notebooks → src/
 ├── src/segmentation_tools_pt/  ← AUTO-GENERATED (do not edit)
-├── scripts/      # build.py (segpt-build), train.py (segpt-train) — Hydra entry points; heldout_compare/semantic_threshold_sweep/_bench_common are thin wrappers over `eval`
+├── scripts/      # build.py (segpt-build), train.py (segpt-train) — Hydra entry points; `segpt-sweep`/`segpt-heldout`/`segpt-rfdetr-benchmark` wrap the older scripts here (see `docs/TRAINING_CLI.md`, older forms)
 ├── configs/      # data_patch.yaml (shared base), build.yaml, train.yaml, *_example.yaml, model/ presets
 ├── docs/         # TRAINING_CLI.md, agents/ (issue-tracker, domain, repo-guide), adr/, superpowers/specs/
 ├── hpc/          # submit.sh (bsub job script) + README (HPC guide, large-dataset strategies)
@@ -131,9 +131,9 @@ every block lives in `docs/agents/repo-guide.md`, and daily driving is covered b
 | `segpt-train` | Hydra-driven end-to-end training (`configs/train.yaml`) |
 | `segpt-eval` | Scores finished runs (`RUN...`, patch mode) with shared IoU/object code, threshold sweep (`--heldout` = threshold chosen on one half of the source images), one comparison table; fails if val ids differ |
 | `segpt-submit` | Submits a build/training job to LSF HPC via `bsub`; reads `hpc:` from config; `--dry-run` to verify |
-| `segpt-sweep` | Scores one finished semantic run at several probability thresholds (wraps `scripts/semantic_threshold_sweep.py`) |
-| `segpt-heldout` | Held-out threshold choice and decision rule over sweep outputs (wraps `scripts/heldout_compare.py`; `segpt-eval --heldout` is the general form) |
-| `segpt-rfdetr-benchmark` | The #102 RF-DETR train/eval benchmark (wraps `scripts/rfdetr_benchmark.py`; `segpt-train model.source=rfdetr` is the general form) |
+| `segpt-sweep` | Scores one finished semantic run at several probability thresholds (older form of `segpt-eval`) |
+| `segpt-heldout` | Held-out threshold choice and decision rule over sweep outputs (older form; `segpt-eval --heldout` is the current command) |
+| `segpt-rfdetr-benchmark` | The #102 RF-DETR train/eval benchmark (older form; `segpt-train model.source=rfdetr` + `segpt-eval` is the current path) |
 
 Examples:
 ```bash
