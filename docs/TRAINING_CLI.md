@@ -23,6 +23,8 @@ Verify the command is available:
 segpt-train --help
 ```
 
+End to end from a data folder (build, train, `segpt-eval`, predict, with the override syntax and gotchas): the `run-segmentation-pipeline` skill, `.github/skills/run-segmentation-pipeline/SKILL.md`.
+
 ---
 
 ## 2. Minimal usage (two config files)
@@ -428,6 +430,7 @@ from segmentation_tools_pt.hydra_pipeline import resolve_inference_cfg
 from segmentation_tools_pt.inference import predict_tiled
 
 knobs = resolve_inference_cfg(cfg)
+knobs.pop("prefetch_factor")        # loader-driven consumers only; predict_tiled does not take it
 prob = predict_tiled(model, image, device, **knobs)   # (C, H, W) probabilities
 ```
 
