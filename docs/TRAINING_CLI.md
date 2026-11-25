@@ -430,7 +430,6 @@ from segmentation_tools_pt.hydra_pipeline import resolve_inference_cfg
 from segmentation_tools_pt.inference import predict_tiled
 
 knobs = resolve_inference_cfg(cfg)
-knobs.pop("prefetch_factor")        # loader-driven consumers only; predict_tiled does not take it
 prob = predict_tiled(model, image, device, **knobs)   # (C, H, W) probabilities
 ```
 
@@ -549,6 +548,27 @@ python scripts/train.py data.raw_dir=... data.patch_dir=...
 ```
 
 ---
+
+## 6a. Predict on new images (`segpt-predict`, issue #122)
+
+`segpt-predict RUN IMAGES... [--out DIR] [--threshold T] [--device cpu]` loads a finished U-Net or RF-DETR run, reads its saved `.hydra/config.yaml` (model family, tile size = `train.crop_size`, class names, channel mode) and predicts every image file or folder with Gaussian-blended tiles.
+
+```bash
+segpt-predict outputs/unet_s42 new_images/ --out predictions
+segpt-predict outputs/unet_s42 a.png b.png --threshold 0.7 --device cpu
+segpt-predict outputs/rfdetr_small_s42 new_images/        # tiles at the training crop size automatically
+```
+
+```
+predictions/masks/<id>.png        0/255 mask (several classes: <id>_<class>.png)
+predictions/overlays/<id>.png     first input channel with the masks tinted
+predictions/summary.json          run, checkpoint, threshold, tile size, files and foreground fraction per image
+```
+
+- **Thresholds.** U-Net: probability, kept where `p > t`, default 0.5. RF-DETR: detector confidence (not a probability), kept where `score >= t`, default 0.2. Use the threshold `segpt-eval --heldout` chose for the run.
+- **Inputs.** 8-bit images only (the training patches are 8-bit); a 16-bit image is refused. Runs with several source channels read `<id>_ch0`, `<id>_ch1`, ... (or `<id>_image1`, ...) next to each other. Multiclass runs write the argmax class per mask.
+- **Errors** print `[error] ...` naming the file and exit 1: missing `.hydra/config.yaml`, `checkpoints/best.pth` (RF-DETR: `last_ema.pth`), the patch cache `stats.json` a U-Net needs, a wrong channel count, a 16-bit image.
+- RF-DETR runs need the `rfdetr` extra, like `segpt-eval`.
 
 ## 6b. Compare finished runs (`segpt-eval`, issue #109)
 

@@ -8,7 +8,7 @@ Docs: https://hasangoni.github.io/segmentation_tools_pt/inference.html.md"""
 __all__ = ['predict', 'decode', 'apply_hierarchy', 'apply_class_morph', 'find_operating_threshold', 'tile_starts',
            'predict_tiled', 'detections_to_semantic']
 
-# %% ../../nbs/11_inference.ipynb #bdffedd7
+# %% ../../nbs/11_inference.ipynb #90d79c15
 import cv2
 
 from typing import Dict, List, Optional, Sequence
@@ -16,10 +16,10 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import torch
 
-# %% ../../nbs/11_inference.ipynb #07061867
+# %% ../../nbs/11_inference.ipynb #c5fd51f8
 from segmentation_tools_pt.metrics import ObjectMetrics
 
-# %% ../../nbs/11_inference.ipynb #0bbcfa7b
+# %% ../../nbs/11_inference.ipynb #d1301d0b
 def _activate(
     logits: torch.Tensor,  # (B, C, H, W) raw model output
     task: str,             # 'binary' | 'multiclass' | 'multilabel'; None infers binary (C==1) or multiclass (C>1)
@@ -37,7 +37,7 @@ def _activate(
     if not activate: return logits
     return torch.sigmoid(logits) if (logits.shape[1] == 1 or task == 'multilabel') else torch.softmax(logits, dim=1)
 
-# %% ../../nbs/11_inference.ipynb #90d07ab5
+# %% ../../nbs/11_inference.ipynb #57e3f0e3
 @torch.no_grad()
 def predict(
     model,                 # trained model returning (B, C, H, W) logits
@@ -63,7 +63,7 @@ def predict(
         preds.append(torch.rot90(pr, -k, dims=[2, 3]))
     return torch.stack(preds).mean(0).squeeze(0)
 
-# %% ../../nbs/11_inference.ipynb #dad47159
+# %% ../../nbs/11_inference.ipynb #f7926112
 def decode(
     probs: torch.Tensor,     # (C, H, W) probabilities
     threshold=0.5,            # decision threshold: float (binary/multilabel-shared), or per-channel Sequence[float] for multilabel
@@ -92,7 +92,7 @@ def decode(
         return (probs[0] >= threshold).long()
     return probs.argmax(0)
 
-# %% ../../nbs/11_inference.ipynb #842db445
+# %% ../../nbs/11_inference.ipynb #19a7b983
 def apply_hierarchy(
     masks: torch.Tensor,  # (C, H, W) or (B, C, H, W) decoded/binary multilabel masks
     pairs,                  # [(sub_idx, super_idx), ...], e.g. [(1, 0), (2, 0)] for (void,chip),(lifted,chip)
@@ -158,7 +158,7 @@ def apply_class_morph(
         items[i] = torch.from_numpy(m.astype(bool)).to(masks.dtype)
     return masks
 
-# %% ../../nbs/11_inference.ipynb #6582b9cb
+# %% ../../nbs/11_inference.ipynb #3bf2d377
 @torch.no_grad()
 def find_operating_threshold(
     model,                          # trained binary model
@@ -199,7 +199,7 @@ def find_operating_threshold(
     return {'recommended_threshold': best['threshold'], 'achieved_recall': best['recall'],
             'achieved_precision': best['precision'], 'sweep': sweep}
 
-# %% ../../nbs/11_inference.ipynb #b6604a56
+# %% ../../nbs/11_inference.ipynb #9238ceb4
 def _reflect_idx(
     n: int,   # size of the original axis
     pad: int, # how much to extend the axis
@@ -278,6 +278,7 @@ def predict_tiled(
     activate: bool = True,          # apply sigmoid/softmax to logits (same as `predict`)
     task: str = None,               # 'binary' | 'multiclass' | 'multilabel'; None infers like `predict`
     padding_mode: str = 'zero',     # 'zero' (default, ONNX-matching) or 'reflect' for images smaller than a tile
+    prefetch_factor: int = None,    # accepted and ignored: `resolve_inference_cfg` returns it, loader-driven callers use it
 ) -> torch.Tensor:
     """Return `(C, H, W)` probabilities for a large image via batched sliding-window tiles.
 
@@ -286,7 +287,8 @@ def predict_tiled(
     bit-identical output to any larger value — the knob trades GPU memory against throughput
     only, never accuracy. Activation semantics match `predict`. `padding_mode` only matters when
     the image is smaller than one tile: 'zero' (default) keeps ONNX-export semantics, 'reflect'
-    mirror-extends the edge so real structure near the border is not darkened.
+    mirror-extends the edge so real structure near the border is not darkened. `prefetch_factor`
+    is ignored (tiles are batched in-process), so `**resolve_inference_cfg(cfg)` can be passed as is.
 
     Example:
         >>> prob = predict_tiled(model, torch.rand(1, 1152, 1632), dev, tile_size=256, overlap=32)
