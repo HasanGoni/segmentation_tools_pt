@@ -75,6 +75,8 @@ def ids_sha1(ids):
 def score_dataset(model, ds, thresholds, classes, device='cpu', batch_size=16, report_ids=None, report_threshold=0.5, image_for=None):
     """Per-patch rows at every threshold: `({str(t): {sample_id: row}}, keep)`.
 
+    A binary run (one class, masks of shape `(H, W)`) is scored like a one-class stack.
+
     `keep` maps `report_ids` to `(image, gt, pred)` (pred at `report_threshold`); `image_for(sample_id)` supplies the raw image.
     """
     import torch
@@ -86,6 +88,7 @@ def score_dataset(model, ds, thresholds, classes, device='cpu', batch_size=16, r
         for b in DataLoader(ds, batch_size=batch_size):
             prob = torch.sigmoid(model(b['image'].to(device))).cpu()
             gt = b['mask'].bool().numpy()
+            if gt.ndim == 3: gt = gt[:, None]      # a binary run's mask has no class axis; `prob` is (B, 1, H, W)
             for k, sid in enumerate(b['sample_id']):
                 if report_ids is not None and sid in report_ids:
                     keep[sid] = (image_for(sid) if image_for else b['image'][k].numpy(), gt[k], (prob[k] > report_threshold).numpy())
@@ -107,6 +110,7 @@ def score_rfdetr(predictor, ds, thresholds, classes, report_ids=None, report_thr
     keep = {}
     for item in ds:
         sid, gt = item['sample_id'], item['mask'].bool().numpy()
+        if gt.ndim == 2: gt = gt[None]      # binary run: mask without a class axis
         img = image_for(sid)
         if img.shape[:2] != gt.shape[1:]:
             raise ValueError(f'{sid}: image is {img.shape[:2]} but the mask is {gt.shape[1:]}; RF-DETR needs the cache patch size to equal train.crop_size')
