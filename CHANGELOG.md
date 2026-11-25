@@ -15,6 +15,7 @@ Tiled inference for RF-DETR runs.
 - `pyproject.toml`: extra `rfdetr = ["rfdetr[train]>=1.12"]`. A fresh `uv sync --extra rfdetr --prerelease=allow` installed rfdetr 1.9.4, and `segpt-eval` on an RF-DETR run then failed with "Invalid tensor image shape ... (3, 512, 512)"; with 1.12.1 it scores the run. Installed `segpt-eval` on a fresh clone of `main` (`uv sync`) works for U-Net runs.
 - New skill `run-segmentation-pipeline`: given a data folder, the chain `segpt-build` -> `segpt-train` (U-Net or `model.source=rfdetr`) -> `segpt-eval --heldout` -> `predict_tiled` / `predict_tiled_rfdetr` -> ONNX / `segpt-submit`, with the config to copy, override syntax (`++`, absolute paths, `hydra.run.dir`) and the gotchas. Linked from `AGENTS.md`, `docs/TRAINING_CLI.md` and the project planner. Doc fixes found while verifying it: `run-inference` loaded `best.pth` with the key `model` (it is `model_state`), and both `run-inference` and `docs/TRAINING_CLI.md` passed `resolve_inference_cfg(cfg)` straight to `predict_tiled`, which raises on `prefetch_factor`.
 
+- `pyproject.toml` / `uv.lock`: the `rfdetr` extra names `torch-hungarian>=0.1.0rc0` (a pre-release that rfdetr 1.12 needs), so the extra resolves with plain `uv lock` / `uv sync` and is now in `uv.lock`. **Fixes a regression from the `rfdetr>=1.12` bound (#116): without it every plain `uv sync` failed with "No solution found".** `--prerelease=allow` is no longer needed. `huggingface_hub` moved 1.27.0 -> newer in the lock.
 
 ## 2026-11-23
 
