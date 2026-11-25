@@ -4,8 +4,8 @@
 # What happens: the patch cache (patch mode only) is converted once to a COCO folder (`coco/` in the run dir),
 # RFDETRSeg{Nano,Small,Medium} trains on it, and the run dir gets `.hydra/config.yaml`,
 # `checkpoints/last_ema.pth` (the checkpoint to evaluate) and `checkpoints/history.json`.
-# Install (optional extra, pre-release packages; a separate environment is safest):
-#   uv sync --extra rfdetr --prerelease=allow
+# Install (optional extra; a separate environment is safest):
+#   uv sync --extra rfdetr
 # U-Net-only keys (loss.*, augment.*, metrics.*, freeze_epochs, monitoring.*, export.*) are ignored by RF-DETR.
 
 defaults:
