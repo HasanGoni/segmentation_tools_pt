@@ -94,7 +94,7 @@ RF-DETR returns objects (box, class, score, mask), not a per-pixel map, so it ne
 `segpt-train` dispatches it in `scripts/train.py` (`rfdetr.is_rfdetr_cfg` -> `rfdetr.train_rfdetr`). Config: `model.source=rfdetr model.arch={nano,small,medium}`
 (`configs/model/rfdetr_*.yaml`, annotated template `configs/train_rfdetr_example.yaml`); `train.epochs/batch_size/seed/num_workers/device` and `train.lr`
 (else `train.encoder_lr`) are mapped; patch mode only; U-Net keys are ignored. Run dir: `.hydra/config.yaml`, `coco/`, `checkpoints/{last_ema.pth,history.json}`.
-`rfdetr` is an optional extra needing pre-release packages: `uv sync --extra rfdetr --prerelease=allow`, in a separate environment (missing -> clear ImportError).
+`rfdetr` is an optional extra: `uv sync --extra rfdetr`, preferably in a separate environment (missing -> clear ImportError).
 Use it only after the decision rule below says an instance model is wanted. The bridge details:
 
 - Data: `masks.write_coco_folder(patch_dir, out_dir, class_names)` writes `train/` + `valid/` COCO
