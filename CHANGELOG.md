@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-11-25
 
+Clear error when training has no batches (fresh-agent trial 3 of #125).
+
+- `train.train_one_epoch` raises `ValueError: the training loader has no batches: 13 training samples with batch_size=16 ... Lower train.batch_size to at most 13` instead of a `ZeroDivisionError`. The loader drops the last partial batch, so `batch_size` larger than the number of train patches left zero batches.
+
 Fix: `segpt-eval` scored binary (one-class) runs against an empty ground truth (found by fresh-agent trial 1/2 of #125).
 
 - `eval.score_dataset` / `eval.score_rfdetr`: a binary run's mask has shape `(H, W)` with no class axis, and the scorer read `gt[0]` as "class 0" = the first image row. Every val patch then had `defect_total = 0`, so a binary run showed F1 1.000, recall 0.000 and threshold 0.9999 whatever the model did. The mask now gets a class axis first. Multilabel runs (masks `(K, H, W)`) were never affected, which is why the #106 numbers stand.
