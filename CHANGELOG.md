@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-11-25
 
+Fix: `segpt-eval` scored binary (one-class) runs against an empty ground truth (found by fresh-agent trial 1/2 of #125).
+
+- `eval.score_dataset` / `eval.score_rfdetr`: a binary run's mask has shape `(H, W)` with no class axis, and the scorer read `gt[0]` as "class 0" = the first image row. Every val patch then had `defect_total = 0`, so a binary run showed F1 1.000, recall 0.000 and threshold 0.9999 whatever the model did. The mask now gets a class axis first. Multilabel runs (masks `(K, H, W)`) were never affected, which is why the #106 numbers stand.
+- Tests use `(H, W)` masks for both scorers; the old fixtures only used `(K, H, W)`.
+
 `segpt-run` (#124, slice C of #121).
 
 - New console script `segpt-run RUN.yaml [KEY=VALUE ...] [--dry-run] [--force STAGE]` (`cli.segpt_run`, `cli.plan_run`, `cli.run_pipeline`): runs `segpt-build`, `segpt-train` (per arm and seed), `segpt-eval` and `segpt-predict` as stages of one run directory, each as its own process. A finished stage leaves a marker in `RUN/.segpt_run`; a re-run skips it, a failed stage resumes (training from `latest.pth`), `--force` re-runs only the named stage, `--dry-run` prints the plan and does nothing. No ledger, no gate, no job submission.
