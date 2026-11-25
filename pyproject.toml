@@ -53,6 +53,9 @@ segpt-build  = "segmentation_tools_pt.cli:segpt_build"
 segpt-train  = "segmentation_tools_pt.cli:segpt_train"
 segpt-submit = "segmentation_tools_pt.cli:segpt_submit"
 segpt-eval   = "segmentation_tools_pt.cli:segpt_eval"
+segpt-sweep  = "segmentation_tools_pt.cli:segpt_sweep"
+segpt-heldout = "segmentation_tools_pt.cli:segpt_heldout"
+segpt-rfdetr-benchmark = "segmentation_tools_pt.cli:segpt_rfdetr_benchmark"
 
 [project.entry-points.nbdev]
 segmentation_tools_pt = "segmentation_tools_pt._modidx:d"

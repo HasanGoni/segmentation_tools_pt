@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-11-25
+
+Every script with a command line is registered in `pyproject.toml`.
+
+- New console scripts `segpt-sweep`, `segpt-heldout`, `segpt-rfdetr-benchmark` (`cli.segpt_sweep`, `segpt_heldout`, `segpt_rfdetr_benchmark`): each runs its `scripts/*.py` from the repo root, with `scripts/` importable. They are the older forms of `segpt-eval` and `segpt-train model.source=rfdetr`.
+
 ## 2026-11-24
 
 Tiled inference for RF-DETR runs.
