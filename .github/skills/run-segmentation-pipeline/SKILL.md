@@ -48,6 +48,8 @@ Rules for every command below:
 - Absolute `data.raw_dir` and `data.patch_dir`. The train configs set `hydra.job.chdir: true`, so relative paths resolve from the run dir.
 - `hydra.run.dir=/abs/runs/NAME` chooses the run directory (`.hydra/`, `checkpoints/`, `train.log`). Without it: `outputs/DATE/TIME`.
 - No internet or no local weights file: the encoder presets (`configs/model/*.yaml`) carry a placeholder `weights_path: /path/to/models/....pth` and training fails with FileNotFoundError. Add `model.pretrained=false model.weights_path=null` (random-init encoder: fine for a first run, weaker than ImageNet weights) or download weights first (`docs/TRAINING_CLI.md` section 8).
+- `configs/train_example.yaml` sets `export.onnx: true`; without the optional `onnx` package training crashes **after** the last epoch. Add `export.onnx=false` unless the user wants an ONNX file and `onnx` is installed (`configs/train.yaml` already defaults to false).
+- CPU-only run (no GPU, or a busy one): `train.device=cpu train.use_amp=false train.num_workers=0 train.freeze_epochs=0`, plus `CUDA_VISIBLE_DEVICES=` in the shell. Keep `train.epochs` small and expect a weak model; this proves the chain, it does not give a usable model.
 - A key that is **not in the base config** needs `++` (`++data.mask_mode=per_class_files`); a plain override fails with "Could not override". Keys that exist take no prefix.
 - `segpt-train configs/x.yaml key=value ...` takes the same overrides as the YAML. `--help` prints the config.
 
@@ -101,7 +103,7 @@ segpt-eval /abs/runs/a_s42 /abs/runs/a_s43 /abs/runs/b_s42 /abs/runs/b_s43 --hel
 segpt-eval RUN --thresholds 0.3 0.5 0.9 --threshold 0.5            # one run, chosen thresholds; add --report-dir DIR for the review report
 ```
 
-Read the table before trusting it: `n` is the number of runs (seeds) in the arm, and with only a handful of val source images `--heldout` has almost nothing to hold out (use at least ~10 source images); F1 1.000 with recall 0.000, or a chosen threshold at the end of the grid (0.9999), means the model predicts (almost) no foreground, not that it is perfect. Check with `segpt-predict` on a val image, then train longer or add data before comparing arms.
+Read the table before trusting it: `n` is the number of runs (seeds) in the arm, and with only a handful of val source images `--heldout` has almost nothing to hold out (use at least ~10 source images). F1 1.000 with recall 0.000, or a chosen threshold at the end of the grid (0.9999), means no object was predicted or counted, not that the model is perfect: check `<out>/<run>.json` for `defect_total` (0 means the evaluation saw no ground-truth objects; versions before the binary-mask fix did this for every one-class run) and run `segpt-predict` on a val image, then train longer or add data before comparing arms.
 
 Rules: runs must share the **same val ids** (same cache and split) or the command fails; `--heldout` picks the threshold on one half of the source images and scores the other half, so a threshold is never tuned on the data it is scored on. U-Net thresholds are probabilities (strict `>`), RF-DETR thresholds are scores (inclusive `>=`, useful range 0.1 to 0.3); do not copy one model's threshold to the other. If a U-Net arm selects 0.9999 (the grid end), its chip IoU is not comparable; report it as grid-limited. After `git pull`, rerun `uv sync` so the `segpt-eval` entry point exists.
 
