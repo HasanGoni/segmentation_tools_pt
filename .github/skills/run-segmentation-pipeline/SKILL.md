@@ -64,12 +64,14 @@ Reuses an existing cache; add `data.force_rebuild=true` after changing patch set
 
 ## 4. Train
 
-U-Net, binary:
+U-Net, binary (a one-class run still needs `+data.class_names=[...]`, or `segpt-eval` crashes with `TypeError: 'NoneType' object is not iterable` after training):
 
 ```bash
 segpt-train /abs/proj/train.yaml data.raw_dir=/abs/RAW data.patch_dir=/abs/PATCHES model=convnext_tiny \
-  train.epochs=15 hydra.run.dir=/abs/runs/convnext_s42 train.seed=42
+  '+data.class_names=[defect]' train.epochs=15 hydra.run.dir=/abs/runs/convnext_s42 train.seed=42
 ```
+
+First run with no preference: keep the config's default encoder (`mobilenet_v2`, small and fast) and compare with `model=convnext_tiny` later via `segpt-eval`.
 
 U-Net, multilabel (start from the 3-head preset; two classes shown):
 
