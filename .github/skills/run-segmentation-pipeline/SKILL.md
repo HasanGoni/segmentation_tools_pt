@@ -13,6 +13,7 @@ Every knob lives in a YAML config, so work from a copy of an existing config, no
 
 ```
 data folder -> segpt-build -> segpt-train -> segpt-eval -> segpt-predict -> (export-onnx | segpt-submit)
+              (or all four stages from one run file: `segpt-run`, section 7)
               patch cache    checkpoints/   comparison     full-image masks
 ```
 
@@ -132,7 +133,19 @@ prob = predict_tiled(model, (img01 - st['mean'][0]) / st['std'][0], torch.device
 
 RF-DETR: `load_rfdetr_predictor(run)` then `predict_tiled_rfdetr(pred, image_chw, 'cuda', threshold=0.2, **knobs)` (raw 0-255 pixels, not normalised). **Tile at the training patch size** (`train.crop_size`; the default): half-size tiles dropped some patches from IoU 0.98 to 0.0.
 
-## 7. Optional
+## 7. One command for the whole chain: `segpt-run`
+
+When the user agrees to run everything, write a run file (data, config copy, arms, seeds, `predict.images`) and run it; it calls the commands above, skips finished stages and resumes after a crash. See `docs/TRAINING_CLI.md` section 6c.
+
+```bash
+segpt-run /abs/run.yaml --dry-run     # check the plan first
+segpt-run /abs/run.yaml               # same command again after a failure resumes at the failed stage
+segpt-run /abs/run.yaml --force eval  # redo evaluation after changing eval.args
+```
+
+Add `+data.class_names=[...]` to `overrides` for a single-class run: `segpt-eval` needs it.
+
+## 8. Optional
 
 - ONNX: `export.onnx=true` in the train config, or `export-onnx` skill. U-Net only.
 - Error analysis after training: `monitoring.error_analysis.enabled=true`, or the `segmentation-error-analysis` skill.
