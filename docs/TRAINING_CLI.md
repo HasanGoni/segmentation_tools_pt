@@ -490,8 +490,8 @@ converted once to `coco/` in the run directory (`write_coco_folder`, layout `aut
 U-Net-only keys (loss, augment, metrics, freeze, monitoring, export) are ignored. The run directory holds `.hydra/config.yaml`,
 `checkpoints/last_ema.pth` (evaluate this one) and `checkpoints/history.json`.
 
-`rfdetr` is an optional extra and is imported only when RF-DETR training starts. It needs pre-release packages, so install it in a
-separate environment: `uv sync --extra rfdetr --prerelease=allow` (or `uv pip install --prerelease=allow 'rfdetr[train]'`).
+`rfdetr` is an optional extra and is imported only when RF-DETR training starts. Install it with `uv sync --extra rfdetr`, preferably in a
+separate environment.
 Without it, `segpt-train` stops with that install message. Not supported yet: resume, ONNX export through `export_onnx`.
 
 The bridge functions that connect it to our data and metrics:
@@ -584,7 +584,7 @@ segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout   # U-Net and RF-
 - **Arms.** Directory names that differ only by a trailing `_s<seed>` are seeds of one arm (`resnet18_e15_s42`, `resnet18_e15_s43` -> `resnet18_e15`); the table shows the mean and, for two or more runs, `+-` the seed spread.
 - **`--heldout`.** The best threshold is chosen on one half of the *source images* (object F1 of `--objects-class`, default the last class; ties go to the higher threshold) and scored on the other half, both ways, so the number is not tuned on what it reports.
 - **Fingerprint check.** Every run must have the same val patch ids (and classes); otherwise the command prints both fingerprints and exits 1.
-- **Outputs** in `--out` (default `eval_out/`): `<run>.json` (all thresholds, held-out directions), `<run>_per_patch.json` (per-patch rows, input for `scripts/heldout_compare.py`), `comparison.json`.
+- **Outputs** in `--out` (default `eval_out/`): `<run>.json` (all thresholds, held-out directions), `<run>_per_patch.json` (per-patch rows), `comparison.json`.
 - **Review report.** `--report-dir DIR --ids ids.json` builds a `review_report` page for the val patch ids in `ids.json` (a JSON list).
 - **RF-DETR runs (#111).** A run with `model.source: rfdetr` is detected from its config and loaded with `RFDETR.from_checkpoint(checkpoints/last_ema.pth)` (lazy import; without `rfdetr` you get the install hint). Each val patch is predicted **once**, at the lowest swept score, and the detections are rasterised per threshold with `detections_to_semantic(first_class_id=0, output='stack')`, so a U-Net run and an RF-DETR run score through the same sweep, held-out choice, fingerprint check and table:
 
@@ -592,11 +592,11 @@ segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout   # U-Net and RF-
   segpt-eval outputs/resnet18_e15_s42 outputs/rfdetr_small_s42 --heldout    # one table, two model families
   ```
 
-  Run `segpt-eval` for RF-DETR runs in the environment that has `rfdetr` (`uv sync --extra rfdetr --prerelease=allow`); it also needs `hydra`/`smp` for the data side. Without `--thresholds` every run uses **its own grid**: U-Net probabilities `0.05 ... 0.9999` (13 points), RF-DETR scores `0.01 0.03 0.05 0.1 0.2 0.3 0.5 0.7` (RF-DETR scores are not calibrated probabilities; in #106 the best held-out threshold was 0.1 to 0.3). `--thresholds a b c` overrides the grid for every run; the held-out choice is always per run. The patch size of the cache must equal `train.crop_size` (RF-DETR sees the raw patch).
+  Run `segpt-eval` for RF-DETR runs in the environment that has `rfdetr` (`uv sync --extra rfdetr`); it also needs `hydra`/`smp` for the data side. Without `--thresholds` every run uses **its own grid**: U-Net probabilities `0.05 ... 0.9999` (13 points), RF-DETR scores `0.01 0.03 0.05 0.1 0.2 0.3 0.5 0.7` (RF-DETR scores are not calibrated probabilities; in #106 the best held-out threshold was 0.1 to 0.3). `--thresholds a b c` overrides the grid for every run; the held-out choice is always per run. The patch size of the cache must equal `train.crop_size` (RF-DETR sees the raw patch).
   In Python: `rfdetr.load_rfdetr_predictor(run_dir)` returns an `RFDETRPredictor`; `predictor(image, threshold=0.5)` is a `(K, H, W)` score map (`> 0` is the prediction) and `predictor.detections(image, floor)` + `predictor.stack(dets, shape, t)` is the predict-once, cut-many form. The review report (`--report-dir`) works for RF-DETR runs the same way.
   Large images: `rfdetr.predict_tiled_rfdetr(predictor, image_chw, 'cuda', threshold, **resolve_inference_cfg(cfg))` is `predict_tiled` for RF-DETR. Tile at the training patch size (`train.crop_size`, the default); half-size tiles dropped some patches from lifted IoU 0.98 to 0.0, so do not keep `inference.tile_size: 256` for a 512-patch run.
 - **Threshold convention.** U-Net thresholds are strict (a pixel is foreground when `prob > t`); RF-DETR thresholds are inclusive (a detection is kept when `confidence >= t`). A shared grid point such as 0.5 is therefore not exactly comparable between the two families, so compare held-out choices rather than one fixed threshold.
-- **Python.** `from segmentation_tools_pt.eval import run_eval, evaluate_run, compare_runs, held_out, decide`. The go/no-go rule used for #106 is `decide(arms, candidate, objects_class, iou_class)`; both class names are required (no built-in defaults) and the verdict has one IoU key, `iou_ok`. `scripts/heldout_compare.py` takes them as `--objects-class` / `--iou-class` (defaults `lifted` / `chip`, the #106 data). Walkthrough: `tutorials/10_segpt_eval.ipynb`.
+- **Python.** `from segmentation_tools_pt.eval import run_eval, evaluate_run, compare_runs, held_out, decide`. The go/no-go rule used for #106 is `decide(arms, candidate, objects_class, iou_class)`; both class names are required (no built-in defaults) and the verdict has one IoU key, `iou_ok`. Walkthrough: `tutorials/10_segpt_eval.ipynb`.
 
 ---
 
@@ -630,6 +630,12 @@ RUN/build/  RUN/patches/  RUN/train/<arm>_s<seed>/  RUN/eval/  RUN/predict/<arm>
 - **Arms and seeds.** Run names are `<arm>_s<seed>`, the form `segpt-eval` groups into one arm. All runs share one patch cache and split, so the val-id check passes.
 - **Not included.** No ledger, acceptance gate or job submission.
 - `segpt-eval` needs `data.class_names` in the config (add `+data.class_names=[name]` for a single class).
+
+---
+
+<!-- older-forms:start -->
+**Older forms.** Three scripts predate `segpt-eval` and `segpt-train model.source=rfdetr`. They stay installed as `segpt-sweep` (`scripts/semantic_threshold_sweep.py`), `segpt-heldout` (`scripts/heldout_compare.py`) and `segpt-rfdetr-benchmark` (`scripts/rfdetr_benchmark.py`) so old notes still run, but new work should use `segpt-eval [--heldout]` and `segpt-train model.source=rfdetr`. The same-name `.py` files are not to be run directly.
+<!-- older-forms:end -->
 
 ## 7. Outputs
 
