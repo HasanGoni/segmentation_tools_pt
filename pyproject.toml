@@ -57,6 +57,7 @@ segpt-sweep  = "segmentation_tools_pt.cli:segpt_sweep"
 segpt-heldout = "segmentation_tools_pt.cli:segpt_heldout"
 segpt-rfdetr-benchmark = "segmentation_tools_pt.cli:segpt_rfdetr_benchmark"
 segpt-predict = "segmentation_tools_pt.cli:segpt_predict"
+segpt-run = "segmentation_tools_pt.cli:segpt_run"
 
 [project.entry-points.nbdev]
 segmentation_tools_pt = "segmentation_tools_pt._modidx:d"

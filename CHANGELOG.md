@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-11-25
 
+`segpt-run` (#124, slice C of #121).
+
+- New console script `segpt-run RUN.yaml [KEY=VALUE ...] [--dry-run] [--force STAGE]` (`cli.segpt_run`, `cli.plan_run`, `cli.run_pipeline`): runs `segpt-build`, `segpt-train` (per arm and seed), `segpt-eval` and `segpt-predict` as stages of one run directory, each as its own process. A finished stage leaves a marker in `RUN/.segpt_run`; a re-run skips it, a failed stage resumes (training from `latest.pth`), `--force` re-runs only the named stage, `--dry-run` prints the plan and does nothing. No ledger, no gate, no job submission.
+- Tested on tiny synthetic data on CPU: dry-run, skip, force and failure-resume with a stand-in executor, plus one real build, train, eval and predict chain including a genuinely failing train stage. The real chain test is skipped on Python 3.14, where Hydra itself does not start yet.
+- `run-segmentation-pipeline`, `docs/TRAINING_CLI.md` (section 6c) and `AGENTS.md` point at the command.
+
 `segpt-predict` (#122, slice A of #121).
 
 - New console script `segpt-predict RUN IMAGES...` (`cli.segpt_predict`, `cli.predict_run`): predicts new images with a finished U-Net or RF-DETR run from its saved config and writes `masks/`, `overlays/` and `summary.json`. Defaults: U-Net `p > 0.5`, RF-DETR `score >= 0.2`; tile size is the training crop size; 16-bit images, wrong channel counts and missing checkpoints exit 1 naming the file. Tested on a tiny synthetic run on CPU; the RF-DETR path with a stub model.

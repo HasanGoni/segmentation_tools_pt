@@ -14,8 +14,9 @@ import sys
 from pathlib import Path
 
 # %% auto #0
-__all__ = ['PREDICT_THRESHOLDS', 'segpt_train', 'segpt_build', 'segpt_submit', 'segpt_eval', 'segpt_sweep', 'segpt_heldout',
-           'segpt_rfdetr_benchmark', 'PredictError', 'predict_run', 'segpt_predict']
+__all__ = ['PREDICT_THRESHOLDS', 'RUN_FIELDS', 'segpt_train', 'segpt_build', 'segpt_submit', 'segpt_eval', 'segpt_sweep',
+           'segpt_heldout', 'segpt_rfdetr_benchmark', 'PredictError', 'predict_run', 'segpt_predict', 'RunError',
+           'plan_run', 'run_pipeline', 'segpt_run']
 
 # %% ../../nbs/14_cli.ipynb #a5fdbeb0
 def _rewrite_argv_for_hydra() -> None:
@@ -784,3 +785,155 @@ def segpt_predict(argv=None) -> None:
         print(f"[error] {e}", file=sys.stderr)
         sys.exit(1)
     print(f"{len(s['images'])} image(s), {s['family']} threshold {s['threshold']} -> {args.out}/summary.json")
+
+# %% ../../nbs/14_cli.ipynb #6149ec75
+import json, re, shutil
+import yaml
+
+RUN_FIELDS = {'run_dir', 'config', 'build_config', 'overrides', 'arms', 'seeds', 'eval', 'predict'}
+_SEED_SUFFIX = re.compile(r'_s\d+$')
+
+class RunError(Exception):
+    "An expected `segpt-run` failure (bad run file, failed stage): printed without a traceback, exit 1."
+
+def _load_run_file(path, extra_overrides=()):
+    "Read a run file into a plain dict; paths are made absolute against the file's folder."
+    path = Path(path)
+    if not path.is_file(): raise RunError(f'run file not found: {path}')
+    raw = yaml.safe_load(path.read_text()) or {}
+    unknown = set(raw) - RUN_FIELDS
+    if unknown: raise RunError(f'{path}: unknown key(s) {sorted(unknown)}; allowed: {sorted(RUN_FIELDS)}')
+    for key in ('run_dir', 'config'):
+        if not raw.get(key): raise RunError(f"{path}: '{key}' is required")
+    here = path.resolve().parent
+    def absolute(p): return str((here / str(p)).resolve()) if not Path(str(p)).is_absolute() else str(p)
+    arms = raw.get('arms') or {'run': []}
+    for name in arms:
+        if _SEED_SUFFIX.search(str(name)): raise RunError(f"{path}: arm name '{name}' must not end in _s<number> (the seed is added)")
+    pred = dict(raw.get('predict') or {})
+    return {
+        'file': str(path.resolve()), 'run_dir': absolute(raw['run_dir']), 'config': absolute(raw['config']),
+        'build_config': absolute(raw.get('build_config') or raw['config']),
+        'overrides': [str(o) for o in (raw.get('overrides') or [])] + list(extra_overrides),
+        'arms': {str(k): [str(o) for o in (v or [])] for k, v in arms.items()},
+        'seeds': [int(s) for s in (raw.get('seeds') or [42])],
+        'eval': {'args': [str(a) for a in (raw.get('eval') or {}).get('args', [])]},
+        'predict': {'images': [absolute(i) for i in pred.get('images', [])], 'args': [str(a) for a in pred.get('args', [])]},
+    }
+
+# %% ../../nbs/14_cli.ipynb #aa67b5b0
+_STAGE_COMMANDS = {'segpt-build': 'segpt_build', 'segpt-train': 'segpt_train', 'segpt-eval': 'segpt_eval', 'segpt-predict': 'segpt_predict'}
+
+def plan_run(cfg) -> list:
+    "The ordered stages of a run: dicts with `id`, `stage`, `command`, `args` (the CLI call) and `dir` (what the stage owns)."
+    run = Path(cfg['run_dir'])
+    shared = list(cfg['overrides'])
+    if not any(o.startswith('data.patch_dir=') for o in shared): shared.append(f'data.patch_dir={run / "patches"}')
+    stages = [{'id': 'build', 'stage': 'build', 'command': 'segpt-build', 'dir': run / 'build',
+               'args': [cfg['build_config'], *shared, f'hydra.run.dir={run / "build"}']}]
+    runs = []
+    for arm, arm_ovr in cfg['arms'].items():
+        for seed in cfg['seeds']:
+            name = f'{arm}_s{seed}'; d = run / 'train' / name; runs.append((name, d))
+            args = [cfg['config'], *shared, *arm_ovr, f'train.seed={seed}', f'hydra.run.dir={d}']
+            if (d / 'checkpoints' / 'latest.pth').exists(): args.append('train.resume=true')
+            stages.append({'id': f'train-{name}', 'stage': 'train', 'command': 'segpt-train', 'dir': d, 'args': args})
+    stages.append({'id': 'eval', 'stage': 'eval', 'command': 'segpt-eval', 'dir': run / 'eval',
+                   'args': [*[str(d) for _, d in runs], '--out', str(run / 'eval'), *cfg['eval']['args']]})
+    if cfg['predict']['images']:
+        for name, d in runs:
+            out = run / 'predict' / name
+            stages.append({'id': f'predict-{name}', 'stage': 'predict', 'command': 'segpt-predict', 'dir': out,
+                           'args': [str(d), *cfg['predict']['images'], '--out', str(out), *cfg['predict']['args']]})
+    return stages
+
+def _marker(cfg, stage): return Path(cfg['run_dir']) / '.segpt_run' / f"{stage['id']}.done"
+
+def _forced(stage, force):
+    return stage['id'] in force or stage['stage'] in force
+
+# %% ../../nbs/14_cli.ipynb #4705faa9
+def _subprocess_exec(stage):
+    "Run one stage's existing CLI in its own process; the return code is the stage's result."
+    fn = _STAGE_COMMANDS[stage['command']]
+    code = f'from segmentation_tools_pt.cli import {fn}; {fn}()'
+    return subprocess.run([sys.executable, '-c', code, *stage['args']]).returncode
+
+def _show(stage, state):
+    print(f"[{state:7}] {stage['id']:<28} {stage['command']} {' '.join(stage['args'])}")
+
+def run_pipeline(cfg, dry_run=False, force=(), execute=None) -> dict:
+    "Run the plan of `cfg` stage by stage; returns `{stage id: 'done' | 'skipped' | 'planned'}`, raises `RunError` at the first failed stage."
+    execute = execute or _subprocess_exec
+    force = set(force)
+    stages = plan_run(cfg)
+    known = {s['id'] for s in stages} | {s['stage'] for s in stages}
+    bad = force - known
+    if bad: raise RunError(f'--force {sorted(bad)}: not a stage of this run; stages are {sorted(known)}')
+    result = {}
+    if not dry_run:
+        Path(cfg['run_dir']).mkdir(parents=True, exist_ok=True)
+        shutil.copy(cfg['file'], Path(cfg['run_dir']) / 'run.yaml')
+    for st in stages:
+        marker, forced = _marker(cfg, st), _forced(st, force)
+        todo = forced or not marker.exists()
+        if dry_run:
+            _show(st, 'forced' if forced else 'todo' if todo else 'done'); result[st['id']] = 'planned' if todo else 'skipped'; continue
+        if not todo:
+            _show(st, 'skipped'); result[st['id']] = 'skipped'; continue
+        if forced:
+            marker.unlink(missing_ok=True)
+            if st['stage'] != 'build': shutil.rmtree(st['dir'], ignore_errors=True)
+            else: st = {**st, 'args': [*st['args'], 'data.force_rebuild=true']}
+        _show(st, 'running')
+        rc = execute(st)
+        if rc != 0:
+            raise RunError(f"stage '{st['id']}' failed (exit {rc}); fix it and run the same command again: finished stages are skipped and this one resumes")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({'stage': st['id'], 'command': st['command'], 'args': st['args']}, indent=1))
+        result[st['id']] = 'done'
+    return result
+
+# %% ../../nbs/14_cli.ipynb #1c8d8729
+def _run_main_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="segpt-run",
+        description=(
+            "Run build, train (per arm and seed), eval and predict as stages in one run directory.\n\n"
+            "CONFIG is a run file (YAML): run_dir, config (a segpt-train config), optional build_config, overrides,\n"
+            "arms ({name: [overrides]}), seeds, eval.args, predict.images and predict.args. Relative paths are\n"
+            "relative to the run file. Each stage calls the existing command in its own process and leaves a marker\n"
+            "in RUN/.segpt_run when it finishes; a re-run skips finished stages and resumes at the failed one."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  segpt-run run.yaml --dry-run                 # print the stage plan, run nothing\n"
+            "  segpt-run run.yaml train.epochs=40           # extra Hydra overrides go to build and train\n"
+            "  segpt-run run.yaml --force eval              # redo evaluation only (a stage kind or an id such as train-unet_s42)\n"
+        ),
+    )
+    parser.add_argument("config", metavar="CONFIG", help="Run file (YAML)")
+    parser.add_argument("overrides", nargs="*", metavar="KEY=VALUE", help="Hydra overrides added to build and train")
+    parser.add_argument("--dry-run", action="store_true", help="Print the stage plan and the command of each stage; do no work")
+    parser.add_argument("--force", action="append", default=[], metavar="STAGE",
+                        help="Re-run this stage (build, train, eval, predict, or an id such as train-unet_s42); repeat the flag for more")
+    return parser.parse_args(argv)
+
+def segpt_run(argv=None) -> None:
+    """Entry point for the `segpt-run` command.
+
+    Run the whole chain from one run file, skipping finished stages.
+
+    Example
+    -------
+        segpt-run run.yaml --dry-run
+        segpt-run run.yaml --force eval
+    """
+    args = _run_main_args(argv)
+    try:
+        cfg = _load_run_file(args.config, args.overrides)
+        run_pipeline(cfg, dry_run=args.dry_run, force=args.force)
+    except RunError as e:
+        print(f"[error] {e}", file=sys.stderr)
+        sys.exit(1)

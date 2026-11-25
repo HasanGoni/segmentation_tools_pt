@@ -600,6 +600,39 @@ segpt-eval outputs/unet_s42 outputs/rfdetr_small_s42 --heldout   # U-Net and RF-
 
 ---
 
+## 6c. Run the whole chain (`segpt-run`, issue #124)
+
+`segpt-run RUN.yaml` runs build, train (per arm and seed), eval and predict in one run directory. Each stage is the command you would type by hand, started in its own process.
+
+```yaml
+# run.yaml (relative paths are relative to this file)
+run_dir: runs/demo
+config: configs/train.yaml            # the segpt-train config; build_config: defaults to the same file
+overrides: [data.raw_dir=/abs/raw, train.epochs=40, +data.class_names=[defect]]   # added to build and train
+arms: {unet_r18: [model.arch=resnet18], rfdetr: [model.source=rfdetr, model.arch=small]}
+seeds: [42, 43]
+eval: {args: [--heldout]}
+predict: {images: [/abs/new_images], args: [--threshold, "0.5"]}   # omit to skip predict
+```
+
+```bash
+segpt-run run.yaml --dry-run          # the stage plan and each command; nothing runs
+segpt-run run.yaml                    # run; a crash is fixed, then the same command resumes
+segpt-run run.yaml --force eval       # redo one stage kind (build, train, eval, predict) or one id (train-unet_r18_s42)
+segpt-run run.yaml train.epochs=60    # extra Hydra overrides for build and train
+```
+
+```
+RUN/build/  RUN/patches/  RUN/train/<arm>_s<seed>/  RUN/eval/  RUN/predict/<arm>_s<seed>/  RUN/.segpt_run/<stage>.done  RUN/run.yaml
+```
+
+- **Skip and resume.** A stage with a marker is skipped. A failed stage prints `[error] stage '...' failed` and exits 1 with no marker; the next run starts there (training continues from `checkpoints/latest.pth` when present). `--force` re-runs only the named stage and deletes its old output first; later stages are not re-run, so force them too if they depend on it.
+- **Arms and seeds.** Run names are `<arm>_s<seed>`, the form `segpt-eval` groups into one arm. All runs share one patch cache and split, so the val-id check passes.
+- **Not included.** No ledger, acceptance gate or job submission.
+- `segpt-eval` needs `data.class_names` in the config (add `+data.class_names=[name]` for a single class).
+
+---
+
 <!-- older-forms:start -->
 **Older forms.** Three scripts predate `segpt-eval` and `segpt-train model.source=rfdetr`. They stay installed as `segpt-sweep` (`scripts/semantic_threshold_sweep.py`), `segpt-heldout` (`scripts/heldout_compare.py`) and `segpt-rfdetr-benchmark` (`scripts/rfdetr_benchmark.py`) so old notes still run, but new work should use `segpt-eval [--heldout]` and `segpt-train model.source=rfdetr`. The same-name `.py` files are not to be run directly.
 <!-- older-forms:end -->
