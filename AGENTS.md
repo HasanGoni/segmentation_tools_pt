@@ -191,7 +191,7 @@ HPC in `hpc/README.md`.
 
 - **Before starting any change**: run `git status --short` + `git diff --stat` and check the top of
   `CHANGELOG.md` — a fix from a prior session often exists uncommitted; treat that as the start.
-- **New project**: copy `configs/*_example.yaml`, edit paths, `segpt-build` then `segpt-train`.
+- **New project**: copy `configs/*_example.yaml`, edit paths, `segpt-build` then `segpt-train`. Given only a data folder, follow the `run-segmentation-pipeline` skill (`.github/skills/run-segmentation-pipeline/SKILL.md`): build, train U-Net or RF-DETR, `segpt-eval`, predict.
 - **New feature**: edit `nbs/` → run cells → `nbdev_export` → `nbdev_test` → commit `nbs/` + `src/`.
 - **HPC run**: `segpt-submit configs/train.yaml --dry-run` then without `--dry-run`.
 - **Resume**: `train.resume: true` (+ `train.resume_from:` for a specific checkpoint).
