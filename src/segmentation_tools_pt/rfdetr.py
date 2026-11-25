@@ -183,7 +183,7 @@ def load_rfdetr_predictor(run_dir, num_classes: Optional[int] = None, loader: Op
     return RFDETRPredictor((loader or rfdetr_loader)(ckpt), num_classes, train_size)
 
 
-# %% ../../nbs/18_rfdetr.ipynb #90912ffd
+# %% ../../nbs/18_rfdetr.ipynb #a1e5ce06
 class RFDETRTileModel:
     """Adapts an `RFDETRPredictor` to the model interface `predict_tiled` expects (`eval()` and `(B, C, H, W)` in, `(B, K, H, W)` out).
 
@@ -214,7 +214,6 @@ def predict_tiled_rfdetr(predictor: 'RFDETRPredictor', image, device='cpu', thre
     import torch
     from segmentation_tools_pt.inference import predict_tiled
     import warnings
-    knobs = {k: v for k, v in knobs.items() if k != 'prefetch_factor'}
     if predictor.train_size and knobs.get('tile_size', predictor.train_size) != predictor.train_size:
         warnings.warn(f"tile_size={knobs['tile_size']} differs from the training patch size {predictor.train_size}; RF-DETR "
                       "scores drop sharply on other scales (lifted IoU 0.98 -> 0.0 on some patches at half size in #113). "
