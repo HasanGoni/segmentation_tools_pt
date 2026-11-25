@@ -10,7 +10,7 @@ __all__ = ['TrainState', 'TrainCallback', 'ActivationStatsCallback', 'PredOverla
            'save_checkpoint', 'load_checkpoint', 'pick_batch_aug', 'apply_mixup_batch', 'apply_cutmix_batch',
            'apply_mosaic_batch', 'apply_copy_paste_batch', 'apply_batch_augs', 'train']
 
-# %% ../../nbs/10_train.ipynb #3bafd1d6
+# %% ../../nbs/10_train.ipynb #b3e58e60
 import csv
 import hashlib
 import json
@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 
 
-# %% ../../nbs/10_train.ipynb #16c7c31d
+# %% ../../nbs/10_train.ipynb #9c1c9175
 from segmentation_tools_pt.channels import DEFAULT_CHANNELS
 from segmentation_tools_pt.losses import SegLoss, resolve_loss_weights, validate_hierarchy_loss
 from segmentation_tools_pt.metrics import SegMetrics
@@ -35,7 +35,7 @@ from segmentation_tools_pt.visualize import (
 )
 
 
-# %% ../../nbs/10_train.ipynb #e7df7b95
+# %% ../../nbs/10_train.ipynb #db3bb0cb
 @dataclass
 class TrainState:
     """Mutable context passed to every training callback hook."""
@@ -64,7 +64,7 @@ class TrainState:
     stop_training: bool = False
 
 
-# %% ../../nbs/10_train.ipynb #af1ce44d
+# %% ../../nbs/10_train.ipynb #2509c612
 class TrainCallback:
     """Base callback; override only the hooks you need. Lower `order` runs first."""
     order: int = 0
@@ -83,7 +83,7 @@ class TrainCallback:
 
 
 
-# %% ../../nbs/10_train.ipynb #e275faa2
+# %% ../../nbs/10_train.ipynb #bb8a5462
 _HOOK_TYPES = (nn.Conv2d, nn.BatchNorm2d)
 
 def _hookable_layers(model: nn.Module, max_layers: int) -> List[Tuple[str, nn.Module]]:
@@ -431,7 +431,7 @@ class EncoderDriftCheck(TrainCallback):
         self.before = None
 
 
-# %% ../../nbs/10_train.ipynb #a7943d70
+# %% ../../nbs/10_train.ipynb #12dbec0d
 def _sorted_callbacks(callbacks: Optional[Sequence[TrainCallback]]) -> List[TrainCallback]:
     if not callbacks:
         return []
@@ -450,7 +450,7 @@ def _call_callbacks(
         getattr(cb, hook)(state, **kwargs)
 
 
-# %% ../../nbs/10_train.ipynb #913aa0a9
+# %% ../../nbs/10_train.ipynb #33f3a8f5
 def flatten_epoch_metrics(
     metrics: Dict,                                    # `SegMetrics.compute()` output (with `per_class`)
     prefix: str,                                      # 'train' or 'val'
@@ -480,7 +480,7 @@ def _write_metrics_csv(
         w.writeheader()
         w.writerows(history)
 
-# %% ../../nbs/10_train.ipynb #382e0ae9
+# %% ../../nbs/10_train.ipynb #5cb53015
 def train_one_epoch(
     model: nn.Module,                  # model returning (B, C, H, W) logits
     loader,                            # training DataLoader of {'image','mask'} batches
@@ -497,6 +497,10 @@ def train_one_epoch(
     batch_augs: Optional[dict] = None, # {'mosaic','mixup','cutmix','copy_paste'}: probs; None = off
 ) -> Dict[str, float]:
     """Train for one epoch; return averaged losses, `train_*` metrics and `train_per_class`."""
+    if len(loader) == 0:     # the training loader drops the last partial batch, so batch_size > n_samples leaves no batch at all
+        n, bs = len(getattr(loader, 'dataset', ())), getattr(loader, 'batch_size', None)
+        raise ValueError(f'the training loader has no batches: {n} training samples with batch_size={bs} (partial batches are dropped). '
+                         f'Lower train.batch_size to at most {n}, or add data.')
     model.train()
     running = {'loss': 0., 'loss_tversky': 0., 'loss_dice': 0., 'loss_boundary': 0., 'loss_hierarchy': 0.}
     metrics = SegMetrics(num_classes=num_classes, task=task, threshold=metrics_threshold)
@@ -539,7 +543,7 @@ def train_one_epoch(
     return out
 
 
-# %% ../../nbs/10_train.ipynb #94b8631d
+# %% ../../nbs/10_train.ipynb #c76204a2
 @torch.no_grad()
 def validate(
     model: nn.Module,    # model returning logits
@@ -582,7 +586,7 @@ def validate(
     return res
 
 
-# %% ../../nbs/10_train.ipynb #65c42516
+# %% ../../nbs/10_train.ipynb #aa39ee99
 def save_checkpoint(
     path,                       # destination .pth path
     epoch: int, model, optimizer, scheduler, scaler,  # training state
@@ -607,7 +611,7 @@ def load_checkpoint(path, model, optimizer, scheduler, scaler, device):
         scaler.load_state_dict(ckpt['scaler_state'])
     return ckpt['epoch'] + 1, ckpt['best_score'], ckpt['history']
 
-# %% ../../nbs/10_train.ipynb #dcd6081b
+# %% ../../nbs/10_train.ipynb #424e20e2
 _BATCH_AUG_ORDER = ('mosaic', 'mixup', 'cutmix', 'copy_paste')
 
 def _perm_from_rng(rng, B: int, device) -> torch.Tensor:
@@ -718,7 +722,7 @@ def apply_batch_augs(
     images, targets = fn(images, targets, rng=rng)
     return images, targets, name
 
-# %% ../../nbs/10_train.ipynb #8a5e4238
+# %% ../../nbs/10_train.ipynb #a7a994ab
 def train(
     root: str,                      # patch dataset root (None when pre-built loaders are supplied)
     model: nn.Module,               # model to train
