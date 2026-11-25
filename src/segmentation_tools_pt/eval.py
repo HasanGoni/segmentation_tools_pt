@@ -204,6 +204,9 @@ def _load_run(run_dir):
         raise ValueError(f'{run_dir}: segpt-eval needs a patch-mode run (data.patch_mode=true)')
     preset = resolve_channel_preset(cfg.data.data_mode)
     mask_cfg = resolve_mask_cfg(cfg)
+    if not mask_cfg['class_names']:
+        raise ValueError(f'{run_dir}: segpt-eval needs data.class_names in the run config (one name per class; '
+                         "one class: train with '+data.class_names=[defect]', then run the evaluation again)")
     mean, std, root = run_patch_pipeline(cfg, Path(cfg.data.raw_dir), Path(cfg.data.patch_dir), preset['n_source_channels'],
                                          preset['channel_names'], cfg.data.mask_suffix or '')
     ds = SegmentationDataset(root, 'val', transform=get_val_transforms(cfg.train.crop_size, tuple(mean), tuple(std)),

@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-11-25
 
+Clear error when `segpt-eval` finds no `data.class_names` (fresh-agent trial 4 of #125).
+
+- `eval._load_run` raises `ValueError: ... segpt-eval needs data.class_names in the run config ...` (printed as `[error] ...`, exit 1) instead of `TypeError: 'NoneType' object is not iterable`. Training and `segpt-predict` do not need the key and are unchanged. A one-class run needs `+data.class_names=[defect]` at train time.
+
 Clear error when training has no batches (fresh-agent trial 3 of #125).
 
 - `train.train_one_epoch` raises `ValueError: the training loader has no batches: 13 training samples with batch_size=16 ... Lower train.batch_size to at most 13` instead of a `ZeroDivisionError`. The loader drops the last partial batch, so `batch_size` larger than the number of train patches left zero batches.
