@@ -664,7 +664,7 @@ def _load_scorer(cfg, run_dir, preset, device, loader=None):
             predictor = load_rfdetr_predictor(run_dir, num_classes=len(names) if names else 1, loader=loader)
         except ImportError as e:
             raise PredictError(str(e)) from e
-        return 'rfdetr', ckpt, lambda img, thr: predict_tiled_rfdetr(predictor, img.transpose(2, 0, 1), device, thr, **knobs).numpy() > 0
+        return 'rfdetr', ckpt, lambda img, thr: predict_tiled_rfdetr(predictor, img.transpose(2, 0, 1), device, thr, **knobs).cpu().numpy() > 0
     import albumentations as A
     from segmentation_tools_pt.model import get_model_from_cfg
     ckpt = Path(run_dir) / 'checkpoints' / 'best.pth'
